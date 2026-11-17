@@ -1,0 +1,28 @@
+[package]
+name = "prattle-core"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = { version = "0.22", default-features = false, features = ["unstable_wasm"] }
+serde_json = "1"
+half = "2"
+sha2 = "0.10"
+hf-hub = { version = "0.4", default-features = false, features = ["ureq"], optional = true }
+
+[features]
+# A THIN FAST_LLM's references fetched from the Hugging Face Hub (host tools only; never the page).
+hub = ["dep:hf-hub"]
+# candle's CUDA backend for the host tools (crate::device); the page's wasm build never enables it.
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+hf-hub = ["dep:hf-hub"]
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+safetensors = "0.6"

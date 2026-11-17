@@ -1,0 +1,2673 @@
+{
+  "protocol": "docs/BRIDGE.md \u00a73.2 (E120 design) through upstream's ttft_demo.run_arm",
+  "started_utc": "20261113T123936Z",
+  "gpus": "0,1",
+  "native_options": {
+    "context_size": 17408,
+    "mtp_drafts": 0
+  },
+  "question": "Which service failed first, and why? Answer in one sentence.",
+  "lengths": [
+    {
+      "length": 128,
+      "prompts": [
+        {
+          "index": 0,
+          "file": "prompt-0.txt",
+          "context_tokens": 128,
+          "sha256": "d7370b9b0c727f76f07a014a39bf310ededebf1200aa1a4d82eb0bb19fe570b3"
+        },
+        {
+          "index": 1,
+          "file": "prompt-1.txt",
+          "context_tokens": 128,
+          "sha256": "b4780307dc3ba3c0e77b8b6946a3bebf13a9ff35d5c0b011d6097be7364de838"
+        },
+        {
+          "index": 2,
+          "file": "prompt-2.txt",
+          "context_tokens": 128,
+          "sha256": "2b592da2777b0ba14c5c22d5228428512f6daa1cd85332d3bd3bc8677617776d"
+        },
+        {
+          "index": 3,
+          "file": "prompt-3.txt",
+          "context_tokens": 128,
+          "sha256": "48fe52c78ea2e5e8e8fb87fca79ec46f2f1f2dcb0dc8faf01800ec94e32fa7db"
+        },
+        {
+          "index": 4,
+          "file": "prompt-4.txt",
+          "context_tokens": 128,
+          "sha256": "a902059f3e61c98f3ba323222d2d3d2aa3df119a4fdf07b49ad2ba91f9d650d5"
+        },
+        {
+          "index": 5,
+          "file": "prompt-5.txt",
+          "context_tokens": 128,
+          "sha256": "1db0c5c0f13ab81481aaac23b2276f13a32f8f3727d40d1cd3e14b6fce70a383"
+        },
+        {
+          "index": 6,
+          "file": "prompt-6.txt",
+          "context_tokens": 128,
+          "sha256": "6758b0b406ed86be0b5c10be148597708e38d0a40ead933ab2e52695f21febce"
+        },
+        {
+          "index": 7,
+          "file": "prompt-7.txt",
+          "context_tokens": 128,
+          "sha256": "d970f05e0327a922b046af388174e34f1f4157b4eec0390f6cb947ef7a8fd876"
+        }
+      ],
+      "warmups": [
+        {
+          "arm": "native",
+          "observed_ttft_s": 0.4147754351142794,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The"
+        },
+        {
+          "arm": "composite",
+          "observed_ttft_s": 0.258954050950706,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The"
+        }
+      ],
+      "runs": [
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 0,
+          "observed_ttft_s": 0.144988409942016,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to analyze a"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 0,
+          "observed_ttft_s": 0.11341774882748723,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 1,
+          "observed_ttft_s": 0.10744794621132314,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 1,
+          "observed_ttft_s": 0.1456094579771161,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to analyze a"
+        },
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 2,
+          "observed_ttft_s": 0.1467359981033951,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to analyze a"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 2,
+          "observed_ttft_s": 0.10877137677744031,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 0,
+          "observed_ttft_s": 0.10842025117017329,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 0,
+          "observed_ttft_s": 0.14596859994344413,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 1,
+          "observed_ttft_s": 0.14631278696469963,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 1,
+          "observed_ttft_s": 0.10901730111800134,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 2,
+          "observed_ttft_s": 0.10837648203596473,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 2,
+          "observed_ttft_s": 0.1476175282150507,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 0,
+          "observed_ttft_s": 0.1464316078927368,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 0,
+          "observed_ttft_s": 0.10429177898913622,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 1,
+          "observed_ttft_s": 0.1029909870121628,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 1,
+          "observed_ttft_s": 0.14622404286637902,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 2,
+          "observed_ttft_s": 0.14623626717366278,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 2,
+          "observed_ttft_s": 0.10371548589318991,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 0,
+          "observed_ttft_s": 0.10374655900523067,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 0,
+          "observed_ttft_s": 0.14537588483653963,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 1,
+          "observed_ttft_s": 0.14597547193989158,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 1,
+          "observed_ttft_s": 0.10388803109526634,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 2,
+          "observed_ttft_s": 0.10274909203872085,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 2,
+          "observed_ttft_s": 0.1464634551666677,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 0,
+          "observed_ttft_s": 0.14714825619012117,
+          "first_token_id": 9764,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "Let me analyze the service incident log to"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 0,
+          "observed_ttft_s": 0.10857478203251958,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 1,
+          "observed_ttft_s": 0.10844946396537125,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 1,
+          "observed_ttft_s": 0.14583366317674518,
+          "first_token_id": 9764,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "Let me analyze the service incident log to"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 2,
+          "observed_ttft_s": 0.14539656811393797,
+          "first_token_id": 9764,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "Let me analyze the service incident log to"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 2,
+          "observed_ttft_s": 0.10877428506501019,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 0,
+          "observed_ttft_s": 0.11102410894818604,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 153,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 0,
+          "observed_ttft_s": 0.14636286394670606,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 153
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 1,
+          "observed_ttft_s": 0.14683128707110882,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 153
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 1,
+          "observed_ttft_s": 0.11404596688225865,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 153,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 2,
+          "observed_ttft_s": 0.10778179601766169,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 153,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 2,
+          "observed_ttft_s": 0.14616726012900472,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 153
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 0,
+          "observed_ttft_s": 0.14679657691158354,
+          "first_token_id": 9764,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "Let me analyze the service incident log to"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 0,
+          "observed_ttft_s": 0.10640345700085163,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 1,
+          "observed_ttft_s": 0.10873545496724546,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 1,
+          "observed_ttft_s": 0.14669976709410548,
+          "first_token_id": 9764,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "Let me analyze the service incident log to"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 2,
+          "observed_ttft_s": 0.1465046531520784,
+          "first_token_id": 9764,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "Let me analyze the service incident log to"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 2,
+          "observed_ttft_s": 0.10945476498454809,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 0,
+          "observed_ttft_s": 0.10854557296261191,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 0,
+          "observed_ttft_s": 0.14728807588107884,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 1,
+          "observed_ttft_s": 0.14616062003187835,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 1,
+          "observed_ttft_s": 0.10884389909915626,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 2,
+          "observed_ttft_s": 0.10871515888720751,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 154,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 2,
+          "observed_ttft_s": 0.14667347189970315,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 154
+          },
+          "preview": "The user is asking me to identify which"
+        }
+      ]
+    },
+    {
+      "length": 2048,
+      "prompts": [
+        {
+          "index": 0,
+          "file": "prompt-0.txt",
+          "context_tokens": 2048,
+          "sha256": "1db306cb2f78c70e8e1e434253e31b5e644aa1f5331d6fc1767aec2e90d984d4"
+        },
+        {
+          "index": 1,
+          "file": "prompt-1.txt",
+          "context_tokens": 2048,
+          "sha256": "5b31d92a71ddacd6c0a2f70b42c47151a880036ff71c489f78c8783a91ccbdfe"
+        },
+        {
+          "index": 2,
+          "file": "prompt-2.txt",
+          "context_tokens": 2048,
+          "sha256": "5864c506bee4b72aefcede45188587c90c298fa04ee42dfb2715fcf2a91e0257"
+        },
+        {
+          "index": 3,
+          "file": "prompt-3.txt",
+          "context_tokens": 2048,
+          "sha256": "18f922f3ac7d23fd23eba55b3909025699ed8a6e8eb99d3eedde24f413d22461"
+        },
+        {
+          "index": 4,
+          "file": "prompt-4.txt",
+          "context_tokens": 2048,
+          "sha256": "d5dceab0bf8afc9bcea3d712de4a453001e2e29ee70af51abe14ad78336d20d8"
+        },
+        {
+          "index": 5,
+          "file": "prompt-5.txt",
+          "context_tokens": 2048,
+          "sha256": "eb1ffd702d45eaa0890aad1bc7515af1425726f4f5267399b86f1021e6dce595"
+        },
+        {
+          "index": 6,
+          "file": "prompt-6.txt",
+          "context_tokens": 2048,
+          "sha256": "0a194d15fc2962a209a5757d3390cb098164531bd1124ef78a505d4b2850e441"
+        },
+        {
+          "index": 7,
+          "file": "prompt-7.txt",
+          "context_tokens": 2048,
+          "sha256": "3e55013c664eadfe540d71c681d387b8da2161c20341ab3eaeded3974d620e72"
+        }
+      ],
+      "warmups": [
+        {
+          "arm": "native",
+          "observed_ttft_s": 1.568416436901316,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The"
+        },
+        {
+          "arm": "composite",
+          "observed_ttft_s": 0.546220256946981,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The"
+        }
+      ],
+      "runs": [
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 0,
+          "observed_ttft_s": 1.5680506469216198,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 0,
+          "observed_ttft_s": 0.5445818570442498,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 1,
+          "observed_ttft_s": 0.5374403458554298,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 1,
+          "observed_ttft_s": 1.570432305103168,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 2,
+          "observed_ttft_s": 1.5717721479013562,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 2,
+          "observed_ttft_s": 0.5415323509369045,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 0,
+          "observed_ttft_s": 0.5322645711712539,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 0,
+          "observed_ttft_s": 1.5729438939597458,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 1,
+          "observed_ttft_s": 1.5747377700172365,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 1,
+          "observed_ttft_s": 0.5428692728746682,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 2,
+          "observed_ttft_s": 0.5363098359666765,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 2,
+          "observed_ttft_s": 1.5767729110084474,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 0,
+          "observed_ttft_s": 1.5797124900855124,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 0,
+          "observed_ttft_s": 0.5474198600277305,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 1,
+          "observed_ttft_s": 0.5376520908903331,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 1,
+          "observed_ttft_s": 1.579253336880356,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 2,
+          "observed_ttft_s": 1.5810103209223598,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 2,
+          "observed_ttft_s": 0.5454025180079043,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 0,
+          "observed_ttft_s": 0.5352537541184574,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 0,
+          "observed_ttft_s": 1.5817375348415226,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 1,
+          "observed_ttft_s": 1.5832691218238324,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 1,
+          "observed_ttft_s": 0.5417480438482016,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 2,
+          "observed_ttft_s": 0.5362029259558767,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 2,
+          "observed_ttft_s": 1.5837019481696188,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 0,
+          "observed_ttft_s": 1.5854723199736327,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 0,
+          "observed_ttft_s": 0.5464323060587049,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 1,
+          "observed_ttft_s": 0.5338363931514323,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 1,
+          "observed_ttft_s": 1.5870304950512946,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 2,
+          "observed_ttft_s": 1.5912649689707905,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 2,
+          "observed_ttft_s": 0.5446662770118564,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 0,
+          "observed_ttft_s": 0.5338996530044824,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 0,
+          "observed_ttft_s": 1.5892159878276289,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 1,
+          "observed_ttft_s": 1.5909156678244472,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 1,
+          "observed_ttft_s": 0.5430136499926448,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 2,
+          "observed_ttft_s": 0.5330049579497427,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 2,
+          "observed_ttft_s": 1.590555609203875,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 0,
+          "observed_ttft_s": 1.5923008169047534,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 0,
+          "observed_ttft_s": 0.5449974229559302,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 1,
+          "observed_ttft_s": 0.5344420589972287,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 1,
+          "observed_ttft_s": 1.5935194550547749,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 2,
+          "observed_ttft_s": 1.5947761128190905,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 2,
+          "observed_ttft_s": 0.54715760005638,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 0,
+          "observed_ttft_s": 0.533357541076839,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 0,
+          "observed_ttft_s": 1.5940863371361047,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 1,
+          "observed_ttft_s": 1.59967972477898,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 1,
+          "observed_ttft_s": 0.5482669668272138,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 2,
+          "observed_ttft_s": 0.5354926278814673,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 2074,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 2,
+          "observed_ttft_s": 1.5991729469969869,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 2074
+          },
+          "preview": "The user is asking which service failed first"
+        }
+      ]
+    },
+    {
+      "length": 8192,
+      "prompts": [
+        {
+          "index": 0,
+          "file": "prompt-0.txt",
+          "context_tokens": 8192,
+          "sha256": "fa79dd3a8c628f03e1ff968ef3ad50bba20a25cd1b8d80ab324d6d72e7b9062e"
+        },
+        {
+          "index": 1,
+          "file": "prompt-1.txt",
+          "context_tokens": 8192,
+          "sha256": "5958ecbcb6c98c6af296ca712917d3e97a434422cb98742de49c25d779c5dc01"
+        },
+        {
+          "index": 2,
+          "file": "prompt-2.txt",
+          "context_tokens": 8192,
+          "sha256": "3486cdbc99db019d871b823d7d6d0004d1e0872851d35cabcec4c3a95eb046cf"
+        },
+        {
+          "index": 3,
+          "file": "prompt-3.txt",
+          "context_tokens": 8192,
+          "sha256": "b42e25aefc0305f282375bb4c589cc074763ba2b0240824ca132cf9928679e4c"
+        },
+        {
+          "index": 4,
+          "file": "prompt-4.txt",
+          "context_tokens": 8192,
+          "sha256": "35242911cecdb78c49ac3b404bd5441995500502f87eca9243bbf7de400dcc44"
+        },
+        {
+          "index": 5,
+          "file": "prompt-5.txt",
+          "context_tokens": 8192,
+          "sha256": "efdf8f3502de8d15ae50c06579ea8965f78d355a5f9d16c12babed44092dc735"
+        },
+        {
+          "index": 6,
+          "file": "prompt-6.txt",
+          "context_tokens": 8192,
+          "sha256": "60c32ab98c9784dcb5b02d0920ada9fe979109b115e270f127ce12244d7552c7"
+        },
+        {
+          "index": 7,
+          "file": "prompt-7.txt",
+          "context_tokens": 8192,
+          "sha256": "b25b3cc391cb8c75b57b1ef511ddce88f97ff5c49f3b3cbbe3d8e1cd74967818"
+        }
+      ],
+      "warmups": [
+        {
+          "arm": "native",
+          "observed_ttft_s": 6.455100446008146,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The"
+        },
+        {
+          "arm": "composite",
+          "observed_ttft_s": 1.9939336341340095,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The"
+        }
+      ],
+      "runs": [
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 0,
+          "observed_ttft_s": 6.457530400948599,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 0,
+          "observed_ttft_s": 1.9873810049612075,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 1,
+          "observed_ttft_s": 1.9840647862292826,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 1,
+          "observed_ttft_s": 6.463557529030368,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 2,
+          "observed_ttft_s": 6.477245816029608,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 2,
+          "observed_ttft_s": 1.9927447370719165,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 0,
+          "observed_ttft_s": 1.9872919949702919,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 0,
+          "observed_ttft_s": 6.48041200498119,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 1,
+          "observed_ttft_s": 6.499781613936648,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 1,
+          "observed_ttft_s": 1.9833519528619945,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 2,
+          "observed_ttft_s": 1.979709919076413,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 2,
+          "observed_ttft_s": 6.495475608855486,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 0,
+          "observed_ttft_s": 6.522447193972766,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 0,
+          "observed_ttft_s": 1.9841723991557956,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 1,
+          "observed_ttft_s": 1.976772113936022,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 1,
+          "observed_ttft_s": 6.506050142925233,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 2,
+          "observed_ttft_s": 6.525562151800841,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 2,
+          "observed_ttft_s": 1.98701604292728,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 0,
+          "observed_ttft_s": 1.976536073954776,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 0,
+          "observed_ttft_s": 6.511882212013006,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 1,
+          "observed_ttft_s": 6.536186733981594,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 1,
+          "observed_ttft_s": 1.9854739541187882,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 2,
+          "observed_ttft_s": 1.981590285198763,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 2,
+          "observed_ttft_s": 6.518100130837411,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 0,
+          "observed_ttft_s": 6.534798379056156,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 0,
+          "observed_ttft_s": 1.9816771519836038,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 1,
+          "observed_ttft_s": 1.9769127189647406,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 1,
+          "observed_ttft_s": 6.523940062848851,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 2,
+          "observed_ttft_s": 6.539194718003273,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 2,
+          "observed_ttft_s": 1.9833488159347326,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 0,
+          "observed_ttft_s": 1.9793223661836237,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 0,
+          "observed_ttft_s": 6.530479070963338,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 1,
+          "observed_ttft_s": 6.545738564105704,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 1,
+          "observed_ttft_s": 1.9854870638810098,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 2,
+          "observed_ttft_s": 1.977108052931726,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 2,
+          "observed_ttft_s": 6.538761490955949,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 0,
+          "observed_ttft_s": 6.56580664915964,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 0,
+          "observed_ttft_s": 1.9825529330410063,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 1,
+          "observed_ttft_s": 1.9795705270953476,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 1,
+          "observed_ttft_s": 6.540551599115133,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 2,
+          "observed_ttft_s": 6.610801890958101,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 2,
+          "observed_ttft_s": 1.98628790397197,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 0,
+          "observed_ttft_s": 1.9811168650630862,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 0,
+          "observed_ttft_s": 6.555694219889119,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 1,
+          "observed_ttft_s": 6.632641616975889,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 1,
+          "observed_ttft_s": 1.9879425470717251,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 2,
+          "observed_ttft_s": 1.9797635290306062,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 8218,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 2,
+          "observed_ttft_s": 6.568215453997254,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 8218
+          },
+          "preview": "The user is asking which service failed first"
+        }
+      ]
+    },
+    {
+      "length": 16384,
+      "prompts": [
+        {
+          "index": 0,
+          "file": "prompt-0.txt",
+          "context_tokens": 16384,
+          "sha256": "a11a5b183c45b9fc724efdb72dde33fe523cde5d315283d80de0da42a56659c3"
+        },
+        {
+          "index": 1,
+          "file": "prompt-1.txt",
+          "context_tokens": 16384,
+          "sha256": "1637c3af97918c32f97d46628208f9a0ec3ad304d0aff71932ddf511a01a0bd1"
+        },
+        {
+          "index": 2,
+          "file": "prompt-2.txt",
+          "context_tokens": 16384,
+          "sha256": "efbd0715f8b6fc01397eb7ee7f90e0c99592684e58201e5ca48b7f0cbb4f25f8"
+        },
+        {
+          "index": 3,
+          "file": "prompt-3.txt",
+          "context_tokens": 16384,
+          "sha256": "e5c27d5b606fbaa9013f9c8fffcb0b6d92c0086ac8ba811aba56bde50d82fb3f"
+        },
+        {
+          "index": 4,
+          "file": "prompt-4.txt",
+          "context_tokens": 16384,
+          "sha256": "f7a5692e72161df7d49062c04f3083c700ab398a3a0f871a6a23d6b5ee4a1ad1"
+        },
+        {
+          "index": 5,
+          "file": "prompt-5.txt",
+          "context_tokens": 16384,
+          "sha256": "cece70653fbe11509175834b1f13a4384d8f3257a91d97e30c00c31421f16f8a"
+        },
+        {
+          "index": 6,
+          "file": "prompt-6.txt",
+          "context_tokens": 16384,
+          "sha256": "9d0e2af36dce147db8c5e78e2367523135d78b97719433e75836aa0f61a21a65"
+        },
+        {
+          "index": 7,
+          "file": "prompt-7.txt",
+          "context_tokens": 16384,
+          "sha256": "58684cbd6f319d056cee54c058ab8599a43255a59c5195062784aa219d7e065a"
+        }
+      ],
+      "warmups": [
+        {
+          "arm": "native",
+          "observed_ttft_s": 13.94300078204833,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The"
+        },
+        {
+          "arm": "composite",
+          "observed_ttft_s": 4.11167322890833,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The"
+        }
+      ],
+      "runs": [
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 0,
+          "observed_ttft_s": 13.838117349194363,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 0,
+          "observed_ttft_s": 4.046182587975636,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 1,
+          "observed_ttft_s": 4.033778514014557,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 1,
+          "observed_ttft_s": 13.675551027990878,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 0,
+          "rep": 2,
+          "observed_ttft_s": 13.960107908118516,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 0,
+          "rep": 2,
+          "observed_ttft_s": 4.078113266965374,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 0,
+          "observed_ttft_s": 4.051724178018048,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 0,
+          "observed_ttft_s": 13.680081595899537,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 1,
+          "observed_ttft_s": 13.93392533599399,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 1,
+          "observed_ttft_s": 4.088347068056464,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 1,
+          "rep": 2,
+          "observed_ttft_s": 4.039842354133725,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 1,
+          "rep": 2,
+          "observed_ttft_s": 13.657653227914125,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 0,
+          "observed_ttft_s": 13.920183496084064,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 0,
+          "observed_ttft_s": 4.083575983997434,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 1,
+          "observed_ttft_s": 4.035120685119182,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 1,
+          "observed_ttft_s": 13.6438666889444,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 2,
+          "rep": 2,
+          "observed_ttft_s": 13.892535289051011,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 2,
+          "rep": 2,
+          "observed_ttft_s": 4.098090301034972,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 0,
+          "observed_ttft_s": 4.033781660953537,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 0,
+          "observed_ttft_s": 13.64238374400884,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 1,
+          "observed_ttft_s": 13.882261011051014,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 1,
+          "observed_ttft_s": 4.0813986209686846,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 3,
+          "rep": 2,
+          "observed_ttft_s": 4.03657694789581,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 3,
+          "rep": 2,
+          "observed_ttft_s": 13.635252475040033,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 0,
+          "observed_ttft_s": 13.871390422107652,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 0,
+          "observed_ttft_s": 4.088911711005494,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 1,
+          "observed_ttft_s": 4.032054444076493,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 1,
+          "observed_ttft_s": 13.63879856094718,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 4,
+          "rep": 2,
+          "observed_ttft_s": 13.867340423865244,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 4,
+          "rep": 2,
+          "observed_ttft_s": 4.088081301189959,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 0,
+          "observed_ttft_s": 4.037046266021207,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 0,
+          "observed_ttft_s": 13.63870024587959,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 1,
+          "observed_ttft_s": 13.865314034977928,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 1,
+          "observed_ttft_s": 4.092781940009445,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 5,
+          "rep": 2,
+          "observed_ttft_s": 4.035814458038658,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 5,
+          "rep": 2,
+          "observed_ttft_s": 13.636792846024036,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 0,
+          "observed_ttft_s": 13.867706242017448,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 0,
+          "observed_ttft_s": 4.08776507107541,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 1,
+          "observed_ttft_s": 4.031643409980461,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 1,
+          "observed_ttft_s": 13.635280347894877,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 6,
+          "rep": 2,
+          "observed_ttft_s": 13.867702270159498,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 6,
+          "rep": 2,
+          "observed_ttft_s": 4.099550291895866,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 0,
+          "observed_ttft_s": 4.030177705921233,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 0,
+          "observed_ttft_s": 13.640357004012913,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 1,
+          "observed_ttft_s": 13.875015593133867,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 1,
+          "observed_ttft_s": 4.093390648951754,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "composite",
+          "prompt": 7,
+          "rep": 2,
+          "observed_ttft_s": 4.030803025932983,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 16410,
+            "target": 0
+          },
+          "preview": "The user wants me to identify which service"
+        },
+        {
+          "arm": "native",
+          "prompt": 7,
+          "rep": 2,
+          "observed_ttft_s": 13.644769286038354,
+          "first_token_id": 760,
+          "prefill_tokens": {
+            "source": 0,
+            "target": 16410
+          },
+          "preview": "The user is asking which service failed first"
+        }
+      ]
+    }
+  ],
+  "residency": {
+    "device": "cuda:0",
+    "gpu_total_bytes": 25351356416,
+    "gpu_free_bytes": 6660358144,
+    "torch_allocated_bytes": 0,
+    "torch_reserved_bytes": 0,
+    "torch_cache_reclaims": 0,
+    "source_resident": true,
+    "target_resident": true,
+    "bridge_resident": true,
+    "mtp_resident": false,
+    "native_auxiliary_bytes": 48789504,
+    "context_capacity": 17408,
+    "cache_dtype": "bf16",
+    "mtp_heads": 1,
+    "paged_attention_sharing": false,
+    "snapshot_sharing": true,
+    "native": {
+      "source": {
+        "prefill_tokens": 0,
+        "committed_tokens": 0,
+        "verified_tokens": 0,
+        "head_calls": 0,
+        "installs": 0,
+        "exports": 0,
+        "model_bytes": 2697836544,
+        "context_bytes": 623116288,
+        "compute_bytes": 543137824,
+        "auxiliary_bytes": 14690304,
+        "last_install_s": 0.0,
+        "last_head_s": 0.0
+      },
+      "target": {
+        "prefill_tokens": 0,
+        "committed_tokens": 0,
+        "verified_tokens": 0,
+        "head_calls": 0,
+        "installs": 0,
+        "exports": 0,
+        "model_bytes": 16536412160,
+        "context_bytes": 1297743872,
+        "compute_bytes": 566237344,
+        "auxiliary_bytes": 34099200,
+        "last_install_s": 0.0,
+        "last_head_s": 0.0
+      }
+    }
+  },
+  "success": true
+}

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prattle_not — 4B → 27B</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 2rem auto; padding: 0 1rem; }
+  #prompt, #context { width: 100%; font: inherit; padding: .5rem; box-sizing: border-box; }
+  #context { min-height: 5rem; font-size: .9rem; }
+  #status, .meta { color: #666; }
+  .lede { border-left: 3px solid #ccc; padding: .25rem .75rem; color: #444; }
+  .counters { display: flex; gap: 1.5rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+  #log { margin-top: 1.5rem; }
+  .turn { border-top: 1px solid #eee; padding: .75rem 0; }
+  .turn .q { font-weight: 600; }
+  .turn .a { white-space: pre-wrap; }
+  .turn details { color: #666; font-size: .9rem; white-space: pre-wrap; }
+  .turn .who { font-size: .85rem; color: #666; font-variant-numeric: tabular-nums; }
+  #closeness { border-left: 3px solid #ccc; padding: .25rem .75rem; font-variant-numeric: tabular-nums; }
+  #closeness b { font-size: 1.1rem; }
+  #speedup { font-weight: 600; }
+  body[data-state="error"] #status { color: #b00; }
+</style>
+</head>
+<body data-state="loading">
+<main>
+  <h1>prattle_not — LatentPort's own pair</h1>
+  <p class="lede">Qwen3.5-4B reads your prompt; a learned bridge translates its memory; Qwen3.8-27B
+    answers from it, <b>reading none of the prompt itself</b>. Turn the bridge off and the 27B reads
+    the prompt the ordinary way — ask the same thing both ways to time one against the other. The
+    longer the prompt, the bigger the head start: paste a document below. LatentPort is
+    <a href="https://github.com/LatentPort/latentport">Simon Villani's work</a>; this runs its own
+    runtime and published bridge, on this machine's GPUs.</p>
+  <p id="status">Loading the 4B and the 27B…</p>
+  <p><textarea id="context" placeholder="Optional: paste a document here — it is read before your question" disabled></textarea></p>
+  <form id="ask"><input id="prompt" placeholder="Ask a question and press Enter" autocomplete="off" disabled></form>
+  <p><label><input type="checkbox" id="bridge" checked> Bridge — the 4B reads, the 27B answers from its memory</label>
+    · <button id="fresh" type="button">New conversation</button></p>
+  <p class="meta" id="turn-note">A new conversation: the 4B reads the document and your first question.</p>
+  <p class="meta">Time to first token: <span id="ttft">—</span> · whole reply <span id="total">—</span>
+    · <span id="speedup"></span></p>
+  <p class="meta counters">
+    <span>prompt tokens read by the 4B <b id="source-read">—</b></span>
+    <span>read by the 27B <b id="target-read">—</b></span>
+  </p>
+  <div id="log"></div>
+  <p><button id="how-close" type="button" hidden>How close is the bridged answer?</button></p>
+  <div id="closeness" hidden>
+    <p>Closeness to the 27B reading the prompt itself: <b id="ncr"></b> (NCR — 1 is the native 27B, 0 an
+      empty one; the fidelity table's measure, on this prompt).</p>
+    <p class="meta">The native 27B's own <span id="ref-tokens"></span>-token reply, scored token by token —
+      total loss in nats: empty 27B <span id="nll-empty"></span> · bridged <span id="nll-bridged"></span> ·
+      native <span id="nll-native"></span>.</p>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const set = (state, status) => { document.body.dataset.state = state; if (status !== undefined) $('status').textContent = status; };
+const clocks = {};   // prompt → {bridge: ttft, native: ttft}, for the comparison
+let conversation = null, turns = 0;
+let scorable = null;   // the whole prompt of the last bridged first turn — what "How close?" scores   // the worker keeps this conversation's state; a follow-up sends only itself
+
+function fresh() {
+  conversation = `c${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; turns = 0;
+  $('context').disabled = document.body.dataset.state === 'loading';
+  $('turn-note').textContent = $('bridge').checked
+    ? 'A new conversation: the 4B reads the document and your first question; the 27B answers from its memory.'
+    : 'A new conversation: the 27B reads the document and your first question itself.';
+}
+$('fresh').addEventListener('click', () => { fresh(); $('log').replaceChildren(); $('prompt').focus(); });
+$('bridge').addEventListener('change', fresh);
+fresh();
+
+async function wait() {
+  for (;;) {
+    let s;
+    try { s = await (await fetch('/api/oracle')).json(); } catch (e) { s = {state: 'loading'}; }
+    if (s.state === 'ready') {
+      set('ready', `Ready: ${s.source} → ${s.target}.`);
+      $('prompt').disabled = $('context').disabled = false; $('prompt').focus();
+      return;
+    }
+    if (s.state === 'error') return set('error', s.error);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+function split(text) {
+  const clean = text.replace(/<\|im_end\|>\s*$/, '');
+  const i = clean.indexOf('</think>');
+  return i < 0 ? {thinking: '', answer: clean.trim()} : {thinking: clean.slice(0, i).trim(), answer: clean.slice(i + 8).trim()};
+}
+
+$('ask').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const q = $('prompt').value.trim(), ctx = turns === 0 ? $('context').value.trim() : '';
+  if (!q || document.body.dataset.state === 'thinking') return;
+  const question = ctx ? `${ctx}\n\n${q}` : q;
+  const mode = $('bridge').checked ? 'bridge' : 'native';
+  set('thinking', mode === 'bridge' ? 'The 4B is reading; the 27B will answer from its memory…' : 'The 27B is reading the prompt itself…');
+  $('prompt').disabled = true;
+  let r;
+  try {
+    r = await (await fetch('/api/chat', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question, mode, conversation})})).json();
+  } catch (e) { r = {error: String(e)}; }
+  $('prompt').disabled = false; $('prompt').focus();
+  if (r.error) return set('error', r.error);
+
+  const {thinking, answer} = split(r.reply);
+  const ms = (s) => `${(s * 1000).toFixed(0)} ms`;
+  $('ttft').textContent = ms(r.ttft_s);
+  $('total').textContent = ms(r.total_s);
+  $('source-read').textContent = r.prefill.source;
+  $('target-read').textContent = r.prefill.target;
+  if (r.turn === 'first') {
+    (clocks[question] ||= {})[mode] = r.ttft_s;
+    const c = clocks[question];
+    $('speedup').textContent = c.bridge && c.native
+      ? `this prompt, bridged vs native: ${(c.native / c.bridge).toFixed(2)}× sooner to the first token (one run each)` : '';
+  }
+  if (r.turn === 'first') {
+    scorable = mode === 'bridge' ? question : null;
+    $('how-close').hidden = !scorable;
+    $('closeness').hidden = true;
+  }
+  turns += 1;
+  $('context').disabled = true;
+  $('turn-note').textContent = r.finished
+    ? 'Follow-ups continue from where the 27B already is — nothing is read again. "New conversation" starts over.'
+    : 'That answer hit the length limit, so the next question starts a new conversation.';
+  if (!r.finished) fresh();
+
+  const turn = document.createElement('div');
+  turn.className = 'turn';
+  turn.innerHTML = '<div class="q"></div><div class="who"></div><details><summary>thinking</summary><span></span></details><div class="a"></div>';
+  turn.querySelector('.q').textContent = q + (ctx ? `  (after a ${r.prefill.source || r.prefill.target}-token prompt)` : '');
+  turn.querySelector('.who').textContent = (r.turn === 'follow-up'
+    ? `follow-up — the 27B read only this question (${r.prefill.target} tokens) on top of what it already holds`
+    : mode === 'bridge'
+    ? `27B from the 4B's memory — 4B read ${r.prefill.source} tokens, 27B read ${r.prefill.target}`
+    : `27B reading it itself — 27B read ${r.prefill.target} tokens`) + ` · first token ${ms(r.ttft_s)} · whole reply ${ms(r.total_s)}`;
+  if (thinking) turn.querySelector('details span').textContent = thinking; else turn.querySelector('details').remove();
+  turn.querySelector('.a').textContent = answer;
+  $('reply')?.removeAttribute('id');
+  turn.querySelector('.a').id = 'reply';   // the newest answer
+  $('log').append(turn);
+  set('done', 'Ready.');
+});
+
+$('how-close').addEventListener('click', async () => {
+  if (!scorable || document.body.dataset.state === 'thinking') return;
+  set('thinking', 'Scoring: the 27B reads the prompt itself, then its reply is scored three ways…');
+  let r;
+  try {
+    r = await (await fetch('/api/closeness', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: scorable})})).json();
+  } catch (e) { r = {error: String(e)}; }
+  if (r.error) return set('error', r.error);
+  $('ncr').textContent = r.ncr.toFixed(3);
+  $('ref-tokens').textContent = r.nll.ref_tokens;
+  for (const k of ['empty', 'bridged', 'native']) $(`nll-${k}`).textContent = r.nll[k].toFixed(3);
+  $('closeness').hidden = false;
+  set('done', 'Ready.');
+});
+
+wait();
+</script>
+</body>
+</html>

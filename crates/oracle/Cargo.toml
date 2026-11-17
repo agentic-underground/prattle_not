@@ -1,0 +1,16 @@
+[package]
+name = "oracle"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+prattle-core = { path = "../core" }
+libloading = "0.8"
+minijinja = { version = "3", features = ["loop_controls", "json", "serde"] }
+minijinja-contrib = { version = "3", features = ["pycompat"] }
+serde_json = "1"
+tokenizers = { version = "0.22", default-features = false, features = ["unstable_wasm"] }
+
+[dev-dependencies]
+tokenizers = { version = "0.22", default-features = false, features = ["unstable_wasm"] }

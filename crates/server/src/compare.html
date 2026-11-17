@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAST_LLM Comparison</title>
+<style>
+  :root { --ink: #1d1d1f; --mute: #666; --line: #e3e3e3; --bg: #fff; --good: #1a7f37; --bad: #b00; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e8e8e8; --mute: #9a9a9a; --line: #333; --bg: #141414; --good: #4ac26b; --bad: #ff6b6b; } }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; color: var(--ink); background: var(--bg); }
+  #prompt { width: 100%; font: inherit; padding: .5rem; box-sizing: border-box; }
+  #status, .meta { color: var(--mute); }
+  .lede { border-left: 3px solid var(--line); padding: .25rem .75rem; }
+  .arms { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 1rem; margin-top: 1rem; }
+  .arm { border: 1px solid var(--line); border-radius: 8px; padding: .75rem 1rem; }
+  .arm h2 { font-size: 1rem; margin: 0 0 .25rem; }
+  .arm .what { font-size: .85rem; color: var(--mute); margin: 0 0 .5rem; }
+  .arm .reply { white-space: pre-wrap; min-height: 3rem; }
+  dl { display: grid; grid-template-columns: auto auto; gap: .1rem 1rem; margin: .5rem 0 0; font-size: .9rem; font-variant-numeric: tabular-nums; }
+  dt { color: var(--mute); } dd { margin: 0; text-align: right; }
+  .ttft { font-size: 1.4rem; font-weight: 600; }
+  #verdict { font-weight: 600; }
+  #verdict.same { color: var(--good); } #verdict.differ { color: var(--bad); }
+  body[data-state="error"] #status { color: var(--bad); }
+</style>
+</head>
+<body data-state="loading">
+<main>
+  <h1>FAST_LLM: one file against three</h1>
+  <p class="lede">A FAST_LLM is one weights file holding a small model, a large model and the bridge
+    between them: the small model reads your prompt, the bridge translates what it read, and the large
+    model answers from that, <b>reading none of the prompt itself</b>. Ask once to see three arms side
+    by side, all run here in Prattle's Rust: the large model alone, the same pair from its three files,
+    and the one FAST_LLM file. The bridge method is
+    <a href="https://github.com/LatentPort/latentport">LatentPort, by Simon Villani</a>.</p>
+  <p id="status">Loading the FAST_LLM and the three files it was packed from…</p>
+  <form id="ask"><input id="prompt" placeholder="Ask a question and press Enter" autocomplete="off" disabled></form>
+  <p class="meta" id="pair"></p>
+  <p id="verdict"></p>
+  <div class="arms">
+    <section class="arm">
+      <h2>Large model alone</h2>
+      <p class="what">reads the whole prompt, then answers · <span id="large-files"></span></p>
+      <div class="reply" id="large-reply"></div>
+      <dl>
+        <dt>first token</dt><dd class="ttft"><span id="large-ttft">—</span></dd>
+        <dt>whole reply</dt><dd id="large-total">—</dd>
+        <dt>decode</dt><dd id="large-rate">—</dd>
+        <dt>prompt read by the small model</dt><dd id="large-reader">—</dd>
+        <dt>by the large model</dt><dd id="large-history">—</dd>
+      </dl>
+    </section>
+    <section class="arm">
+      <h2>Small → bridge → large</h2>
+      <p class="what">from <b id="bridged-files">—</b> files: two model folders and a bridge</p>
+      <div class="reply" id="bridged-reply"></div>
+      <dl>
+        <dt>first token</dt><dd class="ttft"><span id="bridged-ttft">—</span></dd>
+        <dt>whole reply</dt><dd id="bridged-total">—</dd>
+        <dt>decode</dt><dd id="bridged-rate">—</dd>
+        <dt>prompt read by the small model</dt><dd id="bridged-reader">—</dd>
+        <dt>by the large model</dt><dd id="bridged-history">—</dd>
+        <dt>loaded in</dt><dd id="bridged-load">—</dd>
+      </dl>
+    </section>
+    <section class="arm">
+      <h2>FAST_LLM</h2>
+      <p class="what">from <b id="fast-files">—</b> file: <span id="fast-name"></span></p>
+      <div class="reply" id="fast-reply"></div>
+      <dl>
+        <dt>first token</dt><dd class="ttft"><span id="fast-ttft">—</span></dd>
+        <dt>whole reply</dt><dd id="fast-total">—</dd>
+        <dt>decode</dt><dd id="fast-rate">—</dd>
+        <dt>prompt read by the small model</dt><dd id="fast-reader">—</dd>
+        <dt>by the large model</dt><dd id="fast-history">—</dd>
+        <dt>loaded in</dt><dd id="fast-load">—</dd>
+      </dl>
+    </section>
+  </div>
+  <p class="meta">The arms run one at a time, in rotated order. Time to first token is measured from
+    the question to the first token written, with the small model's reading inside the bridged arms.</p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const set = (state, status) => { document.body.dataset.state = state; if (status !== undefined) $('status').textContent = status; };
+const ms = (v) => `${v.toFixed(0)} ms`;
+const gb = (b) => `${(b / 1e9).toFixed(2)} GB`;
+
+function showLoad(load) {
+  $('pair').textContent = `${load.source} reads · ${load.target} answers · bridge ${load.bridge}`;
+  $('bridged-files').textContent = load.bridged.files;
+  $('fast-files').textContent = load.fast.files;
+  $('fast-name').textContent = `${load.fast.name} (${gb(load.fast.bytes)})`;
+  $('large-files').textContent = `${load.target}`;
+  $('bridged-load').textContent = `${ms(load.bridged.ms)} · ${gb(load.bridged.bytes)}`;
+  if (load.cards) {
+    $('large-files').textContent = `${load.target} · ${load.cards.bridged}`;
+    $('bridged-files').parentElement.lastChild.textContent = ` files: two model folders and a bridge · ${load.cards.bridged}`;
+    $('fast-name').textContent += ` · ${load.cards.fast}`;
+  }
+  $('fast-load').textContent = `${ms(load.fast.ms)} · ${gb(load.fast.bytes)}`;
+}
+
+// The status is read for as long as the page is open: on the GPUs the comparison steps aside while
+// development uses them, and comes back when it is idle.
+async function poll() {
+  try {
+    const s = await (await fetch('api/compare/status')).json();
+    const busy = document.body.dataset.state === 'thinking';
+    if (s.state === 'ready') {
+      showLoad(s.load);
+      $('prompt').disabled = false;
+      if (!busy && document.body.dataset.state !== 'done') set('ready', 'Ready. Ask a question.');
+    } else if (s.state === 'paused') {
+      $('prompt').disabled = false;
+      if (!busy) set('paused', `Paused, so development keeps the GPUs: ${s.reasons.join('; ')}. Asking now will check with you first.`);
+    } else if (s.state === 'error') {
+      set('error', `The comparison could not load: ${s.error}`);
+      return;
+    } else if (!busy) {
+      set('loading', 'Loading the FAST_LLM and the three files it was packed from…');
+    }
+  } catch (_) { /* the server restarting: try again */ }
+  setTimeout(poll, 2000);
+}
+
+// Before a question on the GPUs: if development is using them, ask first.
+async function confirmGpus() {
+  const g = await (await fetch('api/compare/gpus')).json();
+  if (!g.reasons.length) return { go: true, confirmed: false };
+  const go = confirm(`The GPUs are in use:\n\n• ${g.reasons.join('\n• ')}\n\nRunning the comparison now competes with that work. Are you sure?`);
+  return { go, confirmed: go };
+}
+
+$('ask').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const question = $('prompt').value.trim();
+  if (!question) return;
+  const gate = await confirmGpus();
+  if (!gate.go) return;
+  $('prompt').disabled = true;
+  for (const arm of ['large', 'bridged', 'fast']) $(`${arm}-reply`).textContent = '';
+  $('verdict').textContent = '';
+  set('thinking', 'Running the three arms…');
+  try {
+    const post = (confirmed) => fetch('api/compare', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question, confirmed }) }).then((x) => x.json());
+    let r = await post(gate.confirmed);
+    if (r.needs_confirm) {
+      if (!confirm(`The GPUs became busy:\n\n• ${r.needs_confirm.join('\n• ')}\n\nAre you sure?`)) { set('paused', 'Not run: development keeps the GPUs.'); return; }
+      r = await post(true);
+    }
+    if (r.error) throw new Error(r.error);
+    for (const a of r.arms) {
+      if (a.error) throw new Error(`${a.arm}: ${a.error}`);
+      $(`${a.arm}-reply`).textContent = a.reply;
+      $(`${a.arm}-ttft`).textContent = ms(a.ttft_ms);
+      $(`${a.arm}-total`).textContent = `${ms(a.total_ms)} · ${a.tokens} tokens`;
+      $(`${a.arm}-rate`).textContent = a.tokens_per_s ? `${a.tokens_per_s.toFixed(1)} tokens/s` : '—';
+      $(`${a.arm}-reader`).textContent = a.counters.reader;
+      $(`${a.arm}-history`).textContent = a.counters.history;
+    }
+    const [large, bridged, fast] = r.arms;
+    const v = $('verdict');
+    v.className = r.same_reply ? 'same' : 'differ';
+    v.textContent = (r.same_reply ? 'The FAST_LLM gave the three files’ reply, word for word. ' : 'The FAST_LLM’s reply differs from the three files’. ')
+      + `First token: bridged ${(large.ttft_ms / bridged.ttft_ms).toFixed(2)}× and FAST_LLM ${(large.ttft_ms / fast.ttft_ms).toFixed(2)}× sooner than the large model alone, on this one question.`;
+    set('done', 'Done. Ask another.');
+  } catch (err) {
+    set('error', `The comparison failed: ${err.message}`);
+  } finally {
+    $('prompt').disabled = false;
+  }
+});
+
+poll();
+</script>
+</body>
+</html>

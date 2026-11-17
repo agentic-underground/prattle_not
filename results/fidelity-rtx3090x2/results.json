@@ -1,0 +1,446 @@
+{
+  "protocol": "docs/BRIDGE.md \u00a71.7 adapted: teacher-forced NLL of the native 27B's greedy reply",
+  "started_utc": "20261113T130437Z",
+  "gpus": "0,1",
+  "ref_tokens": 64,
+  "question": "Which service failed first, and why? Answer in one sentence.",
+  "lengths": [
+    {
+      "length": 128,
+      "documents": [
+        {
+          "prompt": 0,
+          "ref_tokens": 64,
+          "ref_bytes": 205,
+          "reference": "The user is asking me to analyze a service incident log and determine which service failed first and why.\n\nLooking at the log:\n- 09:00:00 node-0 auth latency spike 20ms\n- 09:00:01 node-1 auth disk pre",
+          "nll": {
+            "native": 1.696526425112134,
+            "composite": 11.859329529388322,
+            "empty": 134.2569592496368,
+            "wrong_donor": 46.30382997420925,
+            "source": 16.80686364634595
+          }
+        },
+        {
+          "prompt": 1,
+          "ref_tokens": 64,
+          "ref_bytes": 225,
+          "reference": "The user is asking me to identify which service failed first based on the service incident log, and explain why, in one sentence.\n\nLet me look at the log entries chronologically:\n\n09:00:00 node-10 aut",
+          "nll": {
+            "native": 3.9515942225296867,
+            "composite": 17.035622221631296,
+            "empty": 147.26066573681388,
+            "wrong_donor": 58.36888986004389,
+            "source": 33.27382122332226
+          }
+        },
+        {
+          "prompt": 2,
+          "ref_tokens": 64,
+          "ref_bytes": 215,
+          "reference": "The user is asking me to identify which service failed first based on the service incident log, and explain why, in one sentence.\n\nLooking at the log chronologically:\n- 09:00:00 node-11 gateway timeou",
+          "nll": {
+            "native": 3.659754942651201,
+            "composite": 19.17455731235097,
+            "empty": 136.79775041803265,
+            "wrong_donor": 54.87993166707161,
+            "source": 35.02844581251716
+          }
+        },
+        {
+          "prompt": 3,
+          "ref_tokens": 64,
+          "ref_bytes": 223,
+          "reference": "The user is asking me to identify which service failed first based on the service incident log, and explain why, in one sentence.\n\nLooking at the log entries chronologically:\n- 09:00:00 node-12 cache ",
+          "nll": {
+            "native": 5.0295648562289665,
+            "composite": 17.822107695003165,
+            "empty": 149.19138495530197,
+            "wrong_donor": 55.05833980686222,
+            "source": 31.89238465304367
+          }
+        },
+        {
+          "prompt": 4,
+          "ref_tokens": 64,
+          "ref_bytes": 196,
+          "reference": "Let me analyze the service incident log to determine which service failed first and why.\n\nLooking at the timestamps:\n- 09:00:00 node-0 search recovered 950ms\n- 09:00:01 node-11 gateway timeout 599",
+          "nll": {
+            "native": 1.14735411515702,
+            "composite": 12.901991065020232,
+            "empty": 150.30995731400716,
+            "wrong_donor": 66.39101988432199,
+            "source": 20.431065913517045
+          }
+        },
+        {
+          "prompt": 5,
+          "ref_tokens": 64,
+          "ref_bytes": 209,
+          "reference": "The user is asking me to identify which service failed first based on the service incident log, and explain why, in one sentence.\n\nLooking at the log:\n- 09:00:00 node-1 billing connection reset 454ms\n",
+          "nll": {
+            "native": 2.3923093113626,
+            "composite": 13.262935753257636,
+            "empty": 138.41327066570253,
+            "wrong_donor": 43.59129512509972,
+            "source": 30.598371456705596
+          }
+        },
+        {
+          "prompt": 6,
+          "ref_tokens": 64,
+          "ref_bytes": 218,
+          "reference": "Let me analyze the service incident log to determine which service failed first and why.\n\nLooking at the log entries chronologically:\n\n09:00:00 node-2 storage recovered 938ms\n09:00:01 node-1 gateway d",
+          "nll": {
+            "native": 3.712664110639311,
+            "composite": 13.178606169105342,
+            "empty": 151.02607192198053,
+            "wrong_donor": 57.05059450975614,
+            "source": 27.15323830912628
+          }
+        },
+        {
+          "prompt": 7,
+          "ref_tokens": 64,
+          "ref_bytes": 233,
+          "reference": "The user is asking me to identify which service failed first based on the service incident log, and explain why, in one sentence.\n\nLet me look at the log entries chronologically:\n\n09:00:00 node-3 gate",
+          "nll": {
+            "native": 4.315933861375942,
+            "composite": 17.45460424518689,
+            "empty": 135.3666939424748,
+            "wrong_donor": 49.26831624743149,
+            "source": 33.96042049953768
+          }
+        }
+      ]
+    },
+    {
+      "length": 2048,
+      "documents": [
+        {
+          "prompt": 0,
+          "ref_tokens": 64,
+          "ref_bytes": 232,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the log, the first entry is:\n09:00:00 node-0 auth latency spike 20ms\n\nSo the first service to have",
+          "nll": {
+            "native": 4.249392826243112,
+            "composite": 25.5666404294882,
+            "empty": 131.89799400291278,
+            "wrong_donor": 50.15164228350507,
+            "source": 49.987348596567706
+          }
+        },
+        {
+          "prompt": 1,
+          "ref_tokens": 64,
+          "ref_bytes": 206,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLet me look at the first entry in the log:\n09:00:00 node-10 auth retry storm 479ms\n\nThe first incident is at ",
+          "nll": {
+            "native": 3.9164908604412654,
+            "composite": 22.593345044458694,
+            "empty": 140.452350778392,
+            "wrong_donor": 65.89022556730698,
+            "source": 46.74718534754388
+          }
+        },
+        {
+          "prompt": 2,
+          "ref_tokens": 64,
+          "ref_bytes": 202,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry:\n09:00:00 node-11 gateway timeout 963ms\n\nThe first incident is at 09:00:00, and it",
+          "nll": {
+            "native": 5.991699328526364,
+            "composite": 26.84000703560422,
+            "empty": 139.854640254863,
+            "wrong_donor": 62.35935682787301,
+            "source": 48.189583407537945
+          }
+        },
+        {
+          "prompt": 3,
+          "ref_tokens": 64,
+          "ref_bytes": 205,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-12 cache retry storm 467ms\n\nThe first incident is at 09:",
+          "nll": {
+            "native": 3.7317309442436213,
+            "composite": 27.184889282491927,
+            "empty": 145.9806298045821,
+            "wrong_donor": 61.51535585394181,
+            "source": 44.079481451943
+          }
+        },
+        {
+          "prompt": 4,
+          "ref_tokens": 64,
+          "ref_bytes": 216,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLet me look at the first entry in the log:\n09:00:00 node-0 search recovered 950ms\n\nWait, \"recovered\" isn't a ",
+          "nll": {
+            "native": 6.531148568073055,
+            "composite": 32.41592220587317,
+            "empty": 147.41288311358258,
+            "wrong_donor": 62.17102840101761,
+            "source": 51.466142591883084
+          }
+        },
+        {
+          "prompt": 5,
+          "ref_tokens": 64,
+          "ref_bytes": 214,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-1 billing connection reset 454ms\n\nSo the first incident ",
+          "nll": {
+            "native": 5.013005343679039,
+            "composite": 29.338280492181585,
+            "empty": 145.52942656249414,
+            "wrong_donor": 60.18834968051146,
+            "source": 43.19243276539388
+          }
+        },
+        {
+          "prompt": 6,
+          "ref_tokens": 64,
+          "ref_bytes": 227,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLet me look at the first entry in the log:\n09:00:00 node-2 storage recovered 938ms\n\nWait, \"recovered\" means i",
+          "nll": {
+            "native": 7.34880356756,
+            "composite": 28.470987304112157,
+            "empty": 144.70510391557704,
+            "wrong_donor": 65.1870690809433,
+            "source": 53.0153040254014
+          }
+        },
+        {
+          "prompt": 7,
+          "ref_tokens": 64,
+          "ref_bytes": 215,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLet me look at the first entry in the log:\n\n09:00:00 node-3 gateway connection reset 441ms\n\nThe first inciden",
+          "nll": {
+            "native": 3.8857494052687884,
+            "composite": 24.254815549392955,
+            "empty": 128.2728104518424,
+            "wrong_donor": 59.63262076245787,
+            "source": 49.07897118489926
+          }
+        }
+      ]
+    },
+    {
+      "length": 8192,
+      "documents": [
+        {
+          "prompt": 0,
+          "ref_tokens": 64,
+          "ref_bytes": 247,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the log, the first entry is:\n09:00:00 node-0 auth latency spike 20ms\n\nSo the first service to have",
+          "nll": {
+            "native": 4.773182653382131,
+            "composite": 26.646794317011096,
+            "empty": 129.71094379530513,
+            "wrong_donor": 45.434305063905605,
+            "source": 47.43758613084274
+          }
+        },
+        {
+          "prompt": 1,
+          "ref_tokens": 64,
+          "ref_bytes": 204,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-10 auth retry storm 479ms\n\nThe first incident is at 09:0",
+          "nll": {
+            "native": 3.3214458935387148,
+            "composite": 23.80418514444028,
+            "empty": 144.79427777410493,
+            "wrong_donor": 64.44220363126895,
+            "source": 40.59853766013713
+          }
+        },
+        {
+          "prompt": 2,
+          "ref_tokens": 64,
+          "ref_bytes": 246,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-11 gateway timeout 963ms\n\nThis is the very first inciden",
+          "nll": {
+            "native": 5.556470463506823,
+            "composite": 24.95540940914314,
+            "empty": 141.05007367791873,
+            "wrong_donor": 60.95710927220883,
+            "source": 42.823626133452954
+          }
+        },
+        {
+          "prompt": 3,
+          "ref_tokens": 64,
+          "ref_bytes": 205,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-12 cache retry storm 467ms\n\nThe first incident is at 09:",
+          "nll": {
+            "native": 3.2517955204513185,
+            "composite": 24.639576457827705,
+            "empty": 145.9806298045821,
+            "wrong_donor": 60.029286107047604,
+            "source": 43.23609033618681
+          }
+        },
+        {
+          "prompt": 4,
+          "ref_tokens": 64,
+          "ref_bytes": 226,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLet me look at the first entry in the log:\n\n09:00:00 node-0 search recovered 950ms\n\nWait, the first entry say",
+          "nll": {
+            "native": 3.493900250819118,
+            "composite": 27.2526077672453,
+            "empty": 140.51141051997172,
+            "wrong_donor": 58.53838380328419,
+            "source": 48.500584112261244
+          }
+        },
+        {
+          "prompt": 5,
+          "ref_tokens": 64,
+          "ref_bytes": 214,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-1 billing connection reset 454ms\n\nSo the first incident ",
+          "nll": {
+            "native": 3.7075977048828146,
+            "composite": 28.326151840659072,
+            "empty": 145.52942656249414,
+            "wrong_donor": 54.89749199767283,
+            "source": 40.76365066427841
+          }
+        },
+        {
+          "prompt": 6,
+          "ref_tokens": 64,
+          "ref_bytes": 226,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLet me look at the first entry in the log:\n\n09:00:00 node-2 storage recovered 938ms\n\nWait, this says \"recover",
+          "nll": {
+            "native": 4.3231970791093435,
+            "composite": 25.022386712297475,
+            "empty": 140.1801721808573,
+            "wrong_donor": 59.1519279652237,
+            "source": 45.979890523147226
+          }
+        },
+        {
+          "prompt": 7,
+          "ref_tokens": 64,
+          "ref_bytes": 212,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-3 gateway connection reset 441ms\n\nThe first incident is ",
+          "nll": {
+            "native": 3.35923174780142,
+            "composite": 25.4051047816517,
+            "empty": 135.30757440633744,
+            "wrong_donor": 61.34429698324554,
+            "source": 43.373238893195875
+          }
+        }
+      ]
+    },
+    {
+      "length": 16384,
+      "documents": [
+        {
+          "prompt": 0,
+          "ref_tokens": 64,
+          "ref_bytes": 232,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the log, the first entry is:\n09:00:00 node-0 auth latency spike 20ms\n\nSo the first service to show",
+          "nll": {
+            "native": 4.780511747474062,
+            "composite": 25.630521656674812,
+            "empty": 134.94568252431924,
+            "wrong_donor": 47.40647508307868,
+            "source": 45.17261778084111
+          }
+        },
+        {
+          "prompt": 1,
+          "ref_tokens": 64,
+          "ref_bytes": 204,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-10 auth retry storm 479ms\n\nThe first incident is at 09:0",
+          "nll": {
+            "native": 2.2665535947798796,
+            "composite": 23.609608406064105,
+            "empty": 144.79427777410493,
+            "wrong_donor": 63.218370521410165,
+            "source": 38.73418991432989
+          }
+        },
+        {
+          "prompt": 2,
+          "ref_tokens": 64,
+          "ref_bytes": 246,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-11 gateway timeout 963ms\n\nThis is the very first inciden",
+          "nll": {
+            "native": 5.008691553698803,
+            "composite": 25.2429028698,
+            "empty": 141.05007367791873,
+            "wrong_donor": 58.56686178778574,
+            "source": 42.01776451963159
+          }
+        },
+        {
+          "prompt": 3,
+          "ref_tokens": 64,
+          "ref_bytes": 205,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-12 cache retry storm 467ms\n\nThe first incident is at 09:",
+          "nll": {
+            "native": 3.0644954053640467,
+            "composite": 23.483239843444757,
+            "empty": 145.9806298045821,
+            "wrong_donor": 58.902845796612596,
+            "source": 40.6500928243979
+          }
+        },
+        {
+          "prompt": 4,
+          "ref_tokens": 64,
+          "ref_bytes": 226,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLet me look at the first entry in the log:\n\n09:00:00 node-0 search recovered 950ms\n\nWait, the first entry say",
+          "nll": {
+            "native": 4.235442021437413,
+            "composite": 25.90005260288516,
+            "empty": 140.51141051997172,
+            "wrong_donor": 57.1726832506649,
+            "source": 47.35478746855704
+          }
+        },
+        {
+          "prompt": 5,
+          "ref_tokens": 64,
+          "ref_bytes": 214,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-1 billing connection reset 454ms\n\nSo the first incident ",
+          "nll": {
+            "native": 3.7171589331884487,
+            "composite": 26.895707964193964,
+            "empty": 145.52942656249414,
+            "wrong_donor": 54.15302237291037,
+            "source": 41.13458812305707
+          }
+        },
+        {
+          "prompt": 6,
+          "ref_tokens": 64,
+          "ref_bytes": 226,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLet me look at the first entry in the log:\n\n09:00:00 node-2 storage recovered 938ms\n\nWait, that says \"recover",
+          "nll": {
+            "native": 3.5867562576422296,
+            "composite": 22.832088730473448,
+            "empty": 139.38621863525188,
+            "wrong_donor": 53.109041394896146,
+            "source": 48.05895058524157
+          }
+        },
+        {
+          "prompt": 7,
+          "ref_tokens": 64,
+          "ref_bytes": 212,
+          "reference": "The user is asking which service failed first and why, based on the service incident log.\n\nLooking at the first entry in the log:\n09:00:00 node-3 gateway connection reset 441ms\n\nThe first incident is ",
+          "nll": {
+            "native": 2.585054493043697,
+            "composite": 24.959298502511167,
+            "empty": 135.30757440633744,
+            "wrong_donor": 62.15527184772182,
+            "source": 42.04679794893264
+          }
+        }
+      ]
+    }
+  ],
+  "success": true
+}

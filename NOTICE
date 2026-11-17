@@ -1,0 +1,25 @@
+PrattleNot
+Copyright 2026 the PrattleNot contributors (agentic-underground)
+
+This product is a derivative work of LatentPort.
+  LatentPort by Simon Villani (author of arXiv:2609.25053v1). https://latentport.com/
+  https://github.com/LatentPort/latentport, licensed under the Apache License, Version 2.0.
+  Paper: arXiv:2609.25053v1. Characters and story by Simon Villani.
+
+What PrattleNot derives from LatentPort, and how it changes it:
+  * scripts/patch_oracle_two_gpu.py edits LatentPort's native runtime (native/latentport.cpp) and
+    Python package (src/latentport/_native, _reference, gguf.py) at build time, so the 27B and the
+    4B can run on two GPUs. LatentPort's own sources are fetched at their pinned commit by
+    `just oracle`; they are not copied into this repository.
+  * scripts/oracle_ttft.py, oracle_reproduce.py, oracle_fidelity.py and oracle_dump_state.py drive
+    LatentPort's own code (examples/ttft_demo.py and the latentport package) to reproduce its results.
+  * crates/oracle/src/prompt.rs ports LatentPort's examples/ttft_demo.py prompt construction.
+  * crates/core/src/gdn.rs ports the canonical state layout of LatentPort's native/layout.h.
+
+Other third-party work:
+  * crates/core/src/llama.rs is derived from candle-transformers (Copyright the candle authors),
+    licensed MIT OR Apache-2.0.
+  * The Gated DeltaNet arithmetic in crates/core/src/gdn.rs follows llama.cpp (MIT).
+  * The browser page downloads SmolLM2 models by Hugging Face (Apache-2.0) at run time; LatentPort's
+    reproduction downloads Qwen-derived GGUF models under their own licences. No model weights are
+    distributed in this repository.

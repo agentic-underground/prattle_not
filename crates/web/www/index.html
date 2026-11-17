@@ -1,0 +1,1230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>prattle_not</title>
+<meta name="description" content="LatentPort's KV-cache handoff, live in your browser: a small model reads, a larger one answers from its translated memory.">
+<style>
+  :root {
+    --bg: #f6f7fb; --surface: #ffffff; --surface-2: #f1f3f9; --line: #e2e6f0; --line-strong: #cdd3e1;
+    --text: #141a2b; --muted: #5d6680; --faint: #8a92a8;
+    --accent: #5b5bf0; --accent-ink: #ffffff; --accent-soft: #ececfe;
+    --reader: #2f7fe0; --reader-soft: #e3effd;
+    --bridge: #9a4ce8; --bridge-soft: #f2e8fd;
+    --answer: #e0821f; --answer-soft: #fdf0e1;
+    --good: #16935b; --good-soft: #e1f5ea; --bad: #cf3a3a; --bad-soft: #fbe5e5; --warn: #b7791f;
+    --shadow: 0 1px 2px rgba(20, 26, 43, .06), 0 4px 16px rgba(20, 26, 43, .06);
+    --radius: 14px; --radius-sm: 9px;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1020; --surface: #151a2e; --surface-2: #1c2239; --line: #262d48; --line-strong: #343c5c;
+      --text: #e8ebf6; --muted: #a2a9c2; --faint: #737b97;
+      --accent: #8b8bff; --accent-ink: #0d1020; --accent-soft: #23264a;
+      --reader: #5aa2ff; --reader-soft: #182a46; --bridge: #c084fc; --bridge-soft: #2a1d44;
+      --answer: #f5a04a; --answer-soft: #3a2914;
+      --good: #3ccf8e; --good-soft: #123326; --bad: #ff6b6b; --bad-soft: #3b1a1d; --warn: #f2c14e;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 22px rgba(0, 0, 0, .25);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  b, strong { font-weight: 650; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+  [hidden] { display: none !important; }
+
+  /* ---- top bar ---- */
+  .topbar { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .topbar .wrap { display: flex; align-items: center; gap: 14px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; letter-spacing: -.01em; color: var(--text); }
+  .brand svg { width: 28px; height: 28px; }
+  .brand small { font-weight: 500; color: var(--muted); font-size: 13px; }
+  .spacer { flex: 1; }
+  .links { display: flex; gap: 4px; }
+  .links a { color: var(--muted); font-size: 13.5px; padding: 6px 10px; border-radius: 8px; }
+  .links a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+  .engine { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); gap: 2px; }
+  .engine a { padding: 5px 10px; border-radius: 7px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .engine a:hover { text-decoration: none; color: var(--text); }
+  .engine a[aria-current="page"] { background: var(--surface); color: var(--accent); box-shadow: var(--shadow); }
+  .banner { margin: 18px 0 0; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); font-size: 14px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; max-width: 46ch; padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; color: var(--muted); box-shadow: var(--shadow); }
+  .pill #status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  body[data-state="ready"] .dot, body[data-state="done"] .dot { background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+  body[data-state="loading"] .dot, body[data-state="thinking"] .dot { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+  body[data-state="error"] .dot { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+  body[data-state="error"] #status { color: var(--bad); }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); } 50% { box-shadow: 0 0 0 5px var(--accent-soft); } }
+
+  /* ---- hero ---- */
+  .hero { padding: 34px 0 10px; }
+  .eyebrow { display: inline-flex; gap: 8px; align-items: center; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); }
+  .hero h1 { font-size: clamp(26px, 3.6vw, 38px); line-height: 1.15; letter-spacing: -.025em; margin: 10px 0 10px; max-width: 24ch; }
+  .hero h1 .r { color: var(--reader); } .hero h1 .a { color: var(--answer); }
+  .hero p.lede { color: var(--muted); font-size: 16px; max-width: 72ch; margin: 0; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 26px 0 8px; }
+  .kpi { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 16px 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 4px; }
+  .kpi .v { font-size: 30px; font-weight: 700; letter-spacing: -.02em; font-family: var(--mono); }
+  .kpi .v small { font-size: 19px; color: var(--muted); font-weight: 600; }
+  .kpi .l { font-size: 13.5px; color: var(--muted); line-height: 1.4; }
+  .kpi .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12.5px; }
+  .kpi .tag { color: var(--faint); }
+  .kpi::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; border-radius: var(--radius) 0 0 var(--radius); background: var(--k, var(--accent)); }
+
+  /* ---- info popovers ---- */
+  .info { all: unset; cursor: pointer; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font: 600 11px/1 system-ui, sans-serif; color: var(--muted); border: 1px solid var(--line-strong); vertical-align: 1px; }
+  .info:hover, .info:focus-visible { color: var(--accent); border-color: var(--accent); }
+  [popover] { border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; max-width: min(480px, calc(100vw - 32px)); background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(10, 14, 30, .35); }
+  [popover]::backdrop { background: rgba(10, 14, 30, .35); }
+  [popover] h4 { margin: 0 0 6px; font-size: 15px; }
+  [popover] p { margin: 6px 0; color: var(--muted); font-size: 14px; }
+  [popover] .close { float: right; all: unset; cursor: pointer; float: right; color: var(--faint); font-size: 18px; line-height: 1; margin: -4px -6px 0 8px; }
+  [popover] code, .mono { font-family: var(--mono); font-size: 13px; }
+
+  /* ---- tabs ---- */
+  .tabs { display: flex; gap: 4px; margin: 26px 0 0; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .tab { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 11px 14px; font-weight: 600; font-size: 14.5px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+  .tab svg { width: 17px; height: 17px; opacity: .8; }
+  .tab:hover { color: var(--text); }
+  .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+  .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+  .panel { padding: 22px 0 40px; animation: fade .18s ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* ---- cards and controls ---- */
+  .grid-2 { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; }
+  .card + .card { margin-top: 18px; }
+  .card h2 { font-size: 15px; margin: 0; letter-spacing: -.005em; display: flex; align-items: center; gap: 8px; }
+  .card h2 .sub { font-weight: 500; color: var(--faint); font-size: 13px; }
+  .card-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; margin-bottom: 14px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .field { display: flex; gap: 8px; }
+  input[type=text], select { font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px 12px; width: 100%; outline: none; transition: border-color .15s, box-shadow .15s; }
+  input[type=text]:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--surface); }
+  input[type=text]:disabled { opacity: .6; }
+  select { width: auto; padding-right: 30px; cursor: pointer; }
+  .lbl { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+  .btn { font: inherit; font-weight: 600; cursor: pointer; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 10px 16px; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; transition: filter .15s, transform .05s; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+  .btn.ghost { background: var(--surface); color: var(--text); border-color: var(--line-strong); }
+  .btn.small { padding: 6px 10px; font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { all: unset; cursor: pointer; font-size: 12.5px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
+  .chip:hover { color: var(--text); border-color: var(--line-strong); }
+  .msg { min-height: 1.4em; font-size: 13.5px; margin-top: 10px; }
+  .msg.bad { color: var(--bad); }
+  .msg.ok { color: var(--good); }
+
+  /* bridge switch: the checkbox itself, drawn as a switch */
+  .switch-row { display: flex; gap: 14px; align-items: center; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+  #bridge { appearance: none; -webkit-appearance: none; flex: none; width: 46px; height: 26px; border-radius: 999px; background: var(--line-strong); position: relative; cursor: pointer; margin: 0; transition: background .2s; }
+  #bridge::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .2s; }
+  #bridge:checked { background: var(--bridge); }
+  #bridge:checked::after { transform: translateX(20px); }
+  #bridge:disabled { opacity: .5; cursor: wait; }
+  #bridge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .switch-row .t { font-weight: 650; }
+  .switch-row .d { font-size: 13px; color: var(--muted); }
+
+  /* conversation */
+  .bubble { margin-top: 16px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--line); padding: 14px 16px; min-height: 96px; }
+  .bubble .who { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  .bubble .who .sw { width: 9px; height: 9px; border-radius: 3px; background: var(--reader); }
+  body.bridged .bubble .who .sw { background: var(--answer); }
+  .q { font-weight: 600; margin-bottom: 8px; }
+  #reply { white-space: pre-wrap; min-height: 1.5em; font-size: 15.5px; }
+  body[data-state="thinking"] #reply:empty::after, #reply.typing::after { content: "▍"; color: var(--accent); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .placeholder { color: var(--faint); }
+  .ttft-big { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; }
+  #ttft { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+  .meta-line { font-size: 13px; color: var(--muted); }
+
+  /* pipeline */
+  .pipe { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 6px; margin: 4px 0 16px; }
+  .node { border: 1.5px solid var(--line); border-radius: var(--radius-sm); padding: 10px 10px 9px; text-align: center; background: var(--surface); transition: border-color .25s, background .25s, opacity .25s, box-shadow .25s; }
+  .node .n { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  .node .m { font-weight: 650; font-size: 13.5px; margin: 2px 0; }
+  .node .c { font-family: var(--mono); font-size: 20px; font-weight: 700; }
+  .node .u { font-size: 11.5px; color: var(--muted); }
+  .node.reader.on { border-color: var(--reader); background: var(--reader-soft); }
+  .node.bridge.on { border-color: var(--bridge); background: var(--bridge-soft); }
+  .node.answer.on { border-color: var(--answer); background: var(--answer-soft); }
+  .node.off { opacity: .4; }
+  .node.live { box-shadow: 0 0 0 4px var(--accent-soft); }
+  .arrow { display: grid; place-items: center; color: var(--faint); }
+  .arrow svg { width: 22px; height: 22px; }
+  .arrow.on { color: var(--bridge); }
+  .flow { margin: 6px 0 4px; }
+  .bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--line); }
+  .bar > span { display: block; height: 100%; transition: width .45s cubic-bezier(.2, .8, .2, 1); }
+  .seg-reader { background: var(--reader); } .seg-answer { background: var(--answer); } .seg-bridge { background: var(--bridge); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .legend b { color: var(--text); font-family: var(--mono); font-weight: 700; }
+  .history { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .hrow { display: grid; grid-template-columns: 9.5rem 1fr 4.5rem; gap: 10px; align-items: center; font-size: 12.5px; }
+  .hrow .lab { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hrow .track { display: block; height: 9px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .hrow .fill { display: block; height: 100%; border-radius: 999px; transition: width .4s; }
+  .hrow .ms { text-align: right; font-family: var(--mono); }
+  .empty { color: var(--faint); font-size: 13px; padding: 6px 0; }
+  .callout { margin-top: 14px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: 13px; }
+  .callout a { font-weight: 600; }
+
+  /* controls */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+  .arms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 18px; }
+  .arm { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-height: 150px; transition: border-color .2s, box-shadow .2s; }
+  .arm .h { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; }
+  .arm .tagline { display: flex; }
+  .arm .w { font-size: 12.5px; color: var(--muted); }
+  .arm .out { font-size: 14px; white-space: pre-wrap; border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 2px; flex: 1; }
+  .arm .out:empty::before { content: "—"; color: var(--faint); }
+  .arm.running { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .arm.match { border-color: var(--good); }
+  .arm.differ { border-color: var(--bad); }
+  .badge { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+  .badge.go { background: var(--accent-soft); color: var(--accent); }
+  .badge.ok { background: var(--good-soft); color: var(--good); }
+  .badge.no { background: var(--bad-soft); color: var(--bad); }
+  .k-reader { color: var(--reader); } .k-bridge { color: var(--bridge); } .k-answer { color: var(--answer); }
+  .verdicts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .verdict-card { display: flex; gap: 12px; align-items: flex-start; border-radius: var(--radius-sm); padding: 14px; border: 1px solid var(--line); background: var(--surface-2); }
+  .verdict-card .ic { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: var(--line); color: var(--muted); }
+  .verdict-card.ok { border-color: var(--good); background: var(--good-soft); } .verdict-card.ok .ic { background: var(--good); color: #fff; }
+  .verdict-card.no { border-color: var(--bad); background: var(--bad-soft); } .verdict-card.no .ic { background: var(--bad); color: #fff; }
+  .verdict-card .t { font-weight: 650; font-size: 14px; }
+  .verdict-card .d { font-size: 13px; color: var(--muted); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* measure */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+  .progress { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin-top: 14px; border: 1px solid var(--line); }
+  .progress > span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--bridge)); transition: width .3s; }
+  .gauges { display: grid; gap: 14px; margin-top: 16px; }
+  .gauge { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px 16px 10px; background: var(--surface); }
+  .gauge .top { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
+  .gauge .big { font-family: var(--mono); font-size: 30px; font-weight: 750; letter-spacing: -.02em; }
+  .gauge .ci { font-family: var(--mono); color: var(--muted); }
+  .gauge svg { width: 100%; height: 92px; display: block; margin-top: 6px; }
+  .gauge .cap { font-size: 12.5px; color: var(--muted); }
+  table.data { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.data th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 650; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  table.data td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.data td.num, table.data td .num { font-family: var(--mono); }
+  table.data tr:last-child td { border-bottom: 0; }
+  details.protocol { margin-top: 14px; font-size: 13.5px; color: var(--muted); }
+  details.protocol summary { cursor: pointer; font-weight: 600; color: var(--text); }
+  .warn { color: var(--warn); font-weight: 600; }
+  fieldset.lens { border: 0; padding: 0; margin: 0; min-width: 0; }
+  fieldset.lens legend { padding: 0; }
+  .lens .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .len { cursor: pointer; }
+  .len input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .len span { display: inline-block; padding: 9px 14px; border-radius: var(--radius-sm); border: 1px solid var(--line-strong); background: var(--surface); font-size: 13.5px; font-weight: 600; color: var(--muted); }
+  .len input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .len input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .len input:checked + span::before { content: "✓ "; }
+
+  /* evidence */
+  .claim-row td:first-child { font-weight: 600; width: 30%; }
+  .stat { font-family: var(--mono); font-weight: 700; }
+  .vbtn { all: unset; cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; white-space: nowrap; }
+  .vbtn:hover { text-decoration: underline; }
+  .fam { display: grid; grid-template-columns: minmax(10rem, 1.2fr) minmax(0, 1fr) minmax(0, 1.5fr); gap: 8px 16px; align-items: center; font-size: 13px; }
+  .fam .hd { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 650; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .fam .name a { font-weight: 600; }
+  .fam .name small { display: block; color: var(--faint); }
+  .mini { position: relative; height: 18px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+  .mini .f { position: absolute; inset: 0 auto 0 0; border-radius: 6px; }
+  .mini .ceil { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, transparent 0 4px, color-mix(in srgb, var(--answer) 25%, transparent) 4px 8px); border-right: 2px solid var(--answer); }
+  .mini .lab { position: absolute; inset: 0 6px; display: flex; align-items: center; font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--text); }
+
+  /* how it works */
+  .steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; counter-reset: s; }
+  .step { position: relative; padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface); }
+  .step::before { counter-increment: s; content: counter(s); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--k); color: #fff; font-weight: 800; margin-bottom: 10px; }
+  .step h3 { margin: 0 0 6px; font-size: 14.5px; }
+  .step p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  dl.gloss { display: grid; grid-template-columns: 12rem 1fr; gap: 10px 18px; margin: 0; font-size: 14px; }
+  dl.gloss dt { font-weight: 650; }
+  dl.gloss dd { margin: 0; color: var(--muted); }
+
+  footer { border-top: 1px solid var(--line); padding: 22px 0 40px; font-size: 13px; color: var(--muted); }
+
+  @media (max-width: 900px) {
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-2 { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .links { display: none; }
+  }
+  @media (max-width: 620px) {
+    .wrap { padding: 0 16px; }
+    .brand small { display: none; }
+    .pill { max-width: 52vw; }
+    .kpi .v { font-size: 24px; }
+    .form-grid { grid-template-columns: 1fr; }
+    .verdicts { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+    .pipe { grid-template-columns: 1fr; }
+    .arrow { transform: rotate(90deg); }
+    .fam { grid-template-columns: 1fr 1fr; }
+    .fam .hd:nth-child(3), .fam .sp { grid-column: 1 / -1; }
+    dl.gloss { grid-template-columns: 1fr; }
+    .hrow { grid-template-columns: 7rem 1fr 4rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body data-state="loading">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z M9 12l2 2 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0M12 18l4-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM9 12h6M9 16h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="prattle_not">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--accent)"/><circle cx="11" cy="16" r="4.5" fill="#fff" opacity=".9"/><circle cx="22" cy="16" r="6" fill="#fff"/><path d="M15.5 16h1" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
+      prattle_not <small>LatentPort, in your browser</small>
+    </a>
+    <span class="spacer"></span>
+    <nav class="engine" aria-label="Engine">
+      <a id="engine-cpu" href="./" title="candle, compiled to WebAssembly, on your CPU">WebAssembly</a>
+      <a id="engine-gpu" href="webgpu.html" title="Our own WGSL kernels, on your GPU through WebGPU">WebGPU</a>
+    </nav>
+    <nav class="links" aria-label="Elsewhere">
+      <a href="https://github.com/agentic-underground/prattle_not">Code</a>
+      <a href="https://huggingface.co/collections/agentic-underground/prattlenot-6af7ac5e95e0fc80de563d61">Bridges</a>
+      <a href="https://huggingface.co/papers/2609.25053">Paper</a>
+    </nav>
+    <div class="pill" role="status" aria-live="polite"><span class="dot"></span><span id="status">Loading the model…</span></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <span class="eyebrow">LatentPort's KV-cache handoff · running locally · <span id="engine-name">WebAssembly on your CPU</span></span>
+    <h1>A <span class="r">small model</span> reads your prompt. A <span class="a">larger one</span> answers from its memory.</h1>
+    <p class="lede">Turn the bridge on and SmolLM2-135M reads your question while SmolLM2-360M, almost three times
+      larger, answers from the small one's <b>translated memory</b>, reading exactly <b>one</b> token of your prompt
+      itself. Both models and the bridge run in this tab. Every claim below has a button that checks it on
+      your machine.</p>
+    <p class="banner" id="no-webgpu" hidden>This browser has no WebGPU, so the WebGPU engine cannot run here.
+      <a href="./">The WebAssembly page</a> runs the same models and bridge on your CPU, in any browser.</p>
+
+    <div class="kpis">
+      <div class="kpi" style="--k: var(--accent)">
+        <div class="v">1.87<small>×</small></div>
+        <div class="l">sooner to the first token than the 360M reading the prompt itself</div>
+        <div class="foot"><span class="tag">95% CI 1.83–1.91 · CPU, WebAssembly</span>
+          <button class="info" popovertarget="pop-speed" aria-label="About this number">i</button></div>
+      </div>
+      <div class="kpi" style="--k: var(--bridge)">
+        <div class="v">1 <small>token</small></div>
+        <div class="l">of your prompt is all the answering model reads; the rest crosses as memory</div>
+        <div class="foot"><span class="tag">counted on every reply</span>
+          <button class="info" popovertarget="pop-token" aria-label="About this number">i</button></div>
+      </div>
+      <div class="kpi" style="--k: var(--good)">
+        <div class="v">6<small> / 7</small></div>
+        <div class="l">held-out questions right, as many as the 360M reading everything</div>
+        <div class="foot"><span class="tag">3 / 7 without the correction</span>
+          <button class="info" popovertarget="pop-answers" aria-label="About this number">i</button></div>
+      </div>
+      <div class="kpi" style="--k: var(--answer)">
+        <div class="v">3.39<small>×</small></div>
+        <div class="l">LatentPort's own 4B → 27B pair, reproduced on two RTX 3090s at ~16K tokens</div>
+        <div class="foot"><span class="tag">upstream's code and statistic</span>
+          <button class="info" popovertarget="pop-upstream" aria-label="About this number">i</button></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" id="tab-ask" aria-controls="panel-ask" aria-selected="true"><svg><use href="#i-chat"/></svg>Ask</button>
+    <button class="tab" role="tab" id="tab-prove" aria-controls="panel-prove" aria-selected="false" tabindex="-1"><svg><use href="#i-shield"/></svg>Prove it</button>
+    <button class="tab" role="tab" id="tab-measure" aria-controls="panel-measure" aria-selected="false" tabindex="-1"><svg><use href="#i-gauge"/></svg>Measure</button>
+    <button class="tab" role="tab" id="tab-evidence" aria-controls="panel-evidence" aria-selected="false" tabindex="-1"><svg><use href="#i-doc"/></svg>Claims &amp; evidence</button>
+    <button class="tab" role="tab" id="tab-how" aria-controls="panel-how" aria-selected="false" tabindex="-1"><svg><use href="#i-layers"/></svg>How it works</button>
+  </div>
+
+  <!-- ================================================================ ASK -->
+  <section class="panel" role="tabpanel" id="panel-ask" aria-labelledby="tab-ask">
+    <div class="grid-2">
+      <div class="card">
+        <div class="switch-row">
+          <input type="checkbox" id="bridge" role="switch" aria-labelledby="bridge-label" disabled>
+          <div>
+            <div class="t" id="bridge-label">Bridge <span class="badge" id="bridge-badge">off</span></div>
+            <div class="d">SmolLM2-135M reads your prompt; SmolLM2-360M, almost three times larger, answers from its translated memory.</div>
+          </div>
+        </div>
+        <p class="meta-line" hidden style="margin:10px 2px 0">Bridge weights: <a id="bridge-source"></a></p>
+
+        <form id="ask" style="margin-top:16px">
+          <label class="lbl" for="prompt">Your question</label>
+          <div class="field">
+            <input type="text" id="prompt" placeholder="Ask a question and press Enter" autocomplete="off" disabled>
+            <button class="btn" id="send" type="submit" disabled>Ask<svg width="16" height="16"><use href="#i-arrow"/></svg></button>
+          </div>
+          <div class="chips" id="examples">
+            <button type="button" class="chip">What is the capital of France?</button>
+            <button type="button" class="chip">Who wrote Hamlet?</button>
+            <button type="button" class="chip">What is the largest ocean?</button>
+            <button type="button" class="chip">How many legs does a spider have?</button>
+          </div>
+        </form>
+
+        <div class="bubble" aria-live="polite">
+          <div class="who"><span class="sw"></span><span id="who">The answer appears here</span></div>
+          <div class="q" id="asked" hidden></div>
+          <div id="reply"></div>
+        </div>
+        <div class="ttft-big"><span class="meta-line">Time to first token</span><span id="ttft">—</span>
+          <button class="info" popovertarget="pop-ttft" aria-label="About time to first token">i</button></div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-head"><h2>Who read what <span class="sub">counted by the models, this reply</span></h2>
+            <button class="info" popovertarget="pop-counters" aria-label="About the counters">i</button></div>
+          <div class="pipe">
+            <div class="node reader" id="node-reader"><div class="n">Reads</div><div class="m">SmolLM2-135M</div><div class="c" id="reader-tokens">—</div><div class="u">prompt tokens</div></div>
+            <div class="arrow" id="arrow-1"><svg><use href="#i-arrow"/></svg></div>
+            <div class="node bridge" id="node-bridge"><div class="n">Bridge</div><div class="m">fitted maps</div><div class="c" id="bridge-tokens">—</div><div class="u">bridge tokens</div></div>
+            <div class="arrow" id="arrow-2"><svg><use href="#i-arrow"/></svg></div>
+            <div class="node answer" id="node-answer"><div class="n">Answers</div><div class="m">SmolLM2-360M</div><div class="c" id="generator-history">—</div><div class="u">prompt history read</div></div>
+          </div>
+          <div class="flow">
+            <div class="bar" id="flow" aria-hidden="true"><span class="seg-reader" style="width:0"></span><span class="seg-bridge" style="width:0"></span></div>
+            <div class="legend">
+              <span><span class="sw" style="background:var(--surface-2);border:1px solid var(--line-strong)"></span>prompt <b id="prompt-tokens">—</b></span>
+              <span><span class="sw seg-reader"></span>read by the small model <b id="flow-reader">—</b></span>
+              <span><span class="sw seg-bridge"></span>read by the larger model <b id="flow-bridge">—</b></span>
+            </div>
+          </div>
+          <div class="callout" id="flow-note">Ask with the bridge on to watch the prompt cross as memory.</div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Your first tokens <span class="sub">this session</span></h2></div>
+          <div class="history" id="history"><div class="empty">Each reply's time to first token lands here.</div></div>
+          <p class="meta-line" style="margin:12px 0 0">The fair race is the 360M reading the prompt itself against the
+            bridge: <button class="vbtn" data-goto="measure">run it on the Measure tab →</button></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ PROVE -->
+  <section class="panel" role="tabpanel" id="panel-prove" aria-labelledby="tab-prove" hidden>
+    <div class="card">
+      <div class="card-head"><h2>Is the answer really coming from the transported memory?</h2>
+        <button class="info" popovertarget="pop-controls" aria-label="About the controls">i</button></div>
+      <p class="muted small" style="margin:-4px 0 16px">Five runs of the same question, each a different memory. If the bridge works, restoring a
+        model's own memory changes nothing, and swapping in another question's memory changes the answer.</p>
+      <div class="form-grid">
+        <div><label class="lbl" for="controls-question">Question</label>
+          <input type="text" id="controls-question" autocomplete="off" placeholder="the question you asked, or another"></div>
+        <div><label class="lbl" for="donor">Memory from a different question</label>
+          <input type="text" id="donor" autocomplete="off" placeholder="e.g. Name three colours."></div>
+        <div><button class="btn" id="controls" disabled>Run controls</button></div>
+      </div>
+      <div class="chips" id="donors">
+        <span class="small muted" style="align-self:center">Try memory from:</span>
+        <button type="button" class="chip">Name three colours.</button>
+        <button type="button" class="chip">Who wrote Hamlet?</button>
+        <button type="button" class="chip">What is two plus two?</button>
+      </div>
+      <div class="msg" id="controls-why" role="alert"></div>
+
+      <div class="arms">
+        <div class="arm" id="arm-native"><div class="tagline"><span class="badge">baseline</span></div><div class="h"><span class="k-reader">●</span>The small model alone</div>
+          <div class="w">The 135M reads your question itself and answers.</div><div class="out" id="control-native"></div></div>
+        <div class="arm" id="arm-restored"><div class="tagline"><span class="badge">must match</span></div><div class="h"><span class="k-reader">●</span>Its own memory, restored</div>
+          <div class="w">Its memory is taken out and put back. The reply must not change.</div><div class="out" id="control-restored"></div></div>
+        <div class="arm" id="arm-bridged"><div class="tagline"><span class="badge">the claim</span></div><div class="h"><span class="k-answer">●</span>Bridged</div>
+          <div class="w">The 360M answers from the 135M's memory of your question.</div><div class="out" id="control-bridged"></div></div>
+        <div class="arm" id="arm-donor"><div class="tagline"><span class="badge">must differ</span></div><div class="h"><span class="k-bridge">●</span>Bridged, wrong memory</div>
+          <div class="w">Your question, but the memory of the other question crosses.</div><div class="out" id="control-donor"></div></div>
+        <div class="arm" id="arm-donor-own"><div class="tagline"><span class="badge">reference</span></div><div class="h"><span class="k-bridge">●</span>The memory's own question</div>
+          <div class="w">The other question, bridged, so you can see what its memory says.</div><div class="out" id="control-donor-own"></div></div>
+      </div>
+
+      <div class="verdicts">
+        <div class="verdict-card" id="verdict-restore"><div class="ic">?</div><div><div class="t">Restoring its own memory reproduces its reply</div>
+          <div class="d">The memory is taken out and put back without loss.</div></div></div>
+        <div class="verdict-card" id="verdict-follow"><div class="ic">?</div><div><div class="t">The answer changes with the memory</div>
+          <div class="d">The 360M answers from what crossed, not from its one token.</div></div></div>
+      </div>
+      <p class="sr" id="control-verdict" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <!-- ================================================================ MEASURE -->
+  <section class="panel" role="tabpanel" id="panel-measure" aria-labelledby="tab-measure" hidden>
+    <div class="card">
+      <div class="card-head"><h2>Time to first token: the bridge against the 360M reading the prompt itself</h2>
+        <button class="info" popovertarget="pop-speed" aria-label="About the statistic">i</button></div>
+      <div class="toolbar">
+        <fieldset class="lens" id="measure-lengths"><legend class="lbl">Prompt lengths</legend><div class="row">
+          <label class="len"><input type="checkbox" id="len-short" value="short" checked><span>short questions</span></label>
+          <label class="len"><input type="checkbox" id="len-512" value="512"><span>512 tokens</span></label>
+          <label class="len"><input type="checkbox" id="len-2048" value="2048"><span>2K tokens</span></label></div>
+        </fieldset>
+        <button class="btn" id="measure" disabled>Measure</button>
+        <a class="btn ghost small" id="measure-download" hidden download="results.json">Download results.json</a>
+        <span class="small muted" id="measure-count"></span>
+      </div>
+      <div class="progress" id="measure-progress" hidden><span></span></div>
+      <p class="warn" id="measure-warning"></p>
+
+      <div class="gauges" id="gauges">
+        <div class="gauge" id="gauge-ref">
+          <div class="top"><span class="cap">Published on this page's pair, WebAssembly on a CPU:</span><span class="big">1.87×</span><span class="ci">95% CI 1.83–1.91</span></div>
+          <div class="cap">Run Measure to time it on your machine. Each run reads 8 prompts × 3 paired repetitions per length.</div>
+        </div>
+      </div>
+
+      <details class="protocol">
+        <summary>The protocol</summary>
+        <p>8 prompts × 3 paired repetitions per length, the order rotating between arms, one warm-up per arm
+          discarded. The speed-up is native ÷ bridge, the geometric mean over prompts, with its 95% interval
+          (documents/REPRODUCTION.md §5). The ceiling is the answering model alone ÷ the reading model alone: the most the
+          bridge could gain. The bridge arm's own reading of the prompt is inside its time; nothing is excluded.
+          Every run's counters are recorded, so you can check that native runs read the prompt and bridged runs
+          did not.</p>
+      </details>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>The numbers</h2></div>
+      <div style="overflow-x:auto">
+        <table class="data" id="measure-table">
+          <tr><th>length</th><th>first token: speed-up (95% interval) · median</th><th>first visible text</th><th>ceiling</th></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================ EVIDENCE -->
+  <section class="panel" role="tabpanel" id="panel-evidence" aria-labelledby="tab-evidence" hidden>
+    <div class="card">
+      <div class="card-head"><h2>What we claim, and what backs it</h2></div>
+      <div style="overflow-x:auto">
+      <table class="data">
+        <tr><th>claim</th><th>evidence</th><th>check it</th></tr>
+        <tr class="claim-row"><td>The bridged 360M reaches its first token sooner than the 360M reading the prompt</td>
+          <td><span class="stat">1.87×</span> (95% CI 1.83–1.91), paired, in WebAssembly on a CPU, from this page's own Measure protocol.</td>
+          <td><button class="vbtn" data-goto="measure">Measure here →</button></td></tr>
+        <tr class="claim-row"><td>The answering model reads one token of your prompt</td>
+          <td>The models' own counters, shown with every reply: the 135M reads all but the last token, the 360M reads
+            <span class="stat">0</span> prompt history, and <span class="stat">1</span> bridge token crosses.</td>
+          <td><button class="vbtn" data-goto="ask">Ask here →</button></td></tr>
+        <tr class="claim-row"><td>The answer comes from the transported memory</td>
+          <td>Restoring a model's own memory reproduces its reply exactly; another question's memory changes the answer.</td>
+          <td><button class="vbtn" data-goto="prove">Run controls →</button></td></tr>
+        <tr class="claim-row"><td>The bridged answer stays close to the 360M's own</td>
+          <td>Held-out NCR <span class="stat">0.930</span> (the paper's corrected bridge on its own pair: 0.918), and
+            <span class="stat">6 / 7</span> held-out questions right, as many as the 360M reading everything; 3 / 7
+            without the learned correction.</td>
+          <td><a class="vbtn" href="https://huggingface.co/agentic-underground/smollm2-135m-to-360m-bridge">Model card →</a></td></tr>
+        <tr class="claim-row"><td>LatentPort's own speed-up reproduces</td>
+          <td>Its 4B → 27B pair on two RTX 3090s with upstream's timing code and statistic: <span class="stat">1.36×</span>
+            at 128 prompt tokens, <span class="stat">2.94×</span> at ~2K, <span class="stat">3.39×</span> at ~16K.</td>
+          <td><a class="vbtn" href="https://github.com/agentic-underground/prattle_not/blob/main/documents/EXECUTIVE_SUMMARY.md">The result →</a></td></tr>
+      </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Carried to other models <span class="sub">measured on GPUs, from each bridge's card</span></h2>
+        <button class="info" popovertarget="pop-ncr" aria-label="About NCR">i</button></div>
+      <div class="fam" id="families">
+        <div class="hd">pair</div><div class="hd">fidelity (NCR)</div><div class="hd">speed-up, of its ceiling (hatched)</div>
+      </div>
+      <p class="meta-line" style="margin:14px 0 0">Speed-ups are at ~256 prompt tokens, on one RTX 3090 unless marked, on a log scale. Qwen3.5-4B → 9B is
+        LatentPort's own pair: its two models share a recurrent core that costs the same in both, so its ceiling
+        is low. Every bridge is in the <a href="https://huggingface.co/collections/agentic-underground/prattlenot-6af7ac5e95e0fc80de563d61">prattle_not collection</a>.</p>
+    </div>
+  </section>
+
+  <!-- ================================================================ HOW -->
+  <section class="panel" role="tabpanel" id="panel-how" aria-labelledby="tab-how" hidden>
+    <div class="card">
+      <div class="card-head"><h2>One reply, bridged</h2></div>
+      <div class="steps">
+        <div class="step" style="--k: var(--reader)"><h3>The small model reads</h3>
+          <p>SmolLM2-135M reads every prompt token but the last, building its key/value memory, layer by layer.</p></div>
+        <div class="step" style="--k: var(--bridge)"><h3>The bridge translates</h3>
+          <p>For each layer of the 360M, a fitted ridge map turns the 135M's residual stream into the keys and values
+            the 360M would have built, then the paper's rank-4 learned correction refines them.</p></div>
+        <div class="step" style="--k: var(--answer)"><h3>The larger model reads one token</h3>
+          <p>The 360M takes that memory as its own and reads exactly one token of the prompt itself: the bridge
+            token.</p></div>
+        <div class="step" style="--k: var(--good)"><h3>It answers</h3>
+          <p>The 360M generates as usual. It skipped reading the prompt, which is where the time goes on a long one,
+            so its first token arrives sooner.</p></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>The words on this page</h2></div>
+      <dl class="gloss">
+        <dt>Time to first token</dt><dd>From pressing Ask to the first token the answering model samples. The bridged
+          time includes the small model's reading.</dd>
+        <dt>Bridge token</dt><dd>The one token of your prompt the larger model reads itself, on top of the translated memory.</dd>
+        <dt>Ceiling</dt><dd>The larger model alone ÷ the small model alone: the most any handoff could gain, since the
+          small model still has to read.</dd>
+        <dt>NCR</dt><dd>The paper's native-closure ratio: of the gap between the larger model reading nothing and
+          reading everything, the share the bridge closes, scored on the larger model's own replies.</dd>
+        <dt>Wrong memory (donor)</dt><dd>The control: the same bridge fed another question's memory. A real bridge's
+          answer changes with it.</dd>
+        <dt>95% interval</dt><dd>The range the paired speed-up's geometric mean falls in across prompts, LatentPort's
+          own statistic.</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>Weights kept in this browser</h2></div>
+      <p class="muted small" style="margin:0 0 12px">The models and the bridge are downloaded from Hugging Face once, at pinned
+        commits, and kept in this browser's storage, so a reload does not download them again. They never leave
+        your machine.</p>
+      <p style="margin:0"><button class="btn ghost small" id="forget">Forget downloaded weights</button>
+        <span class="small muted" id="forget-note"></span></p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">prattle_not is a derivative of <a href="https://latentport.com/">LatentPort</a> by Simon Villani
+    (<a href="https://github.com/LatentPort/latentport">LatentPort/latentport</a>, Apache-2.0) — characters and
+    story by Simon Villani. Models: SmolLM2 by Hugging Face (Apache-2.0), downloaded from Hugging Face by
+    your browser. Nothing you type leaves your machine. ·
+    <a href="https://github.com/agentic-underground/prattle_not/blob/main/documents/EXECUTIVE_SUMMARY.md">the result</a> ·
+    <a href="https://github.com/agentic-underground/prattle_not/tree/main/results">the records</a> ·
+    <a href="https://github.com/agentic-underground/prattle_not">the code</a></div>
+</footer>
+
+<!-- ================================================================ POPOVERS -->
+<div popover id="pop-speed"><button class="close" popovertarget="pop-speed" popovertargetaction="hide" aria-label="Close">×</button>
+  <h4>1.87× sooner, and how it is measured</h4>
+  <p>Time to first token for the bridged 360M against the 360M reading the whole prompt, on the same machine, in
+    the same tab: 8 prompts × 3 paired repetitions, the arm order rotating, one warm-up per arm discarded.</p>
+  <p>The figure is the geometric mean of native ÷ bridged over prompts with its 95% interval, LatentPort's own
+    statistic. The bridged time <b>includes</b> the 135M reading the prompt.</p>
+  <p><button class="vbtn" data-goto="measure">Measure it on your machine →</button></p></div>
+<div popover id="pop-token"><button class="close" popovertarget="pop-token" popovertargetaction="hide" aria-label="Close">×</button>
+  <h4>One bridge token</h4>
+  <p>LatentPort's handoff: the larger model reads exactly one token of the prompt itself, and everything before it
+    arrives as translated key/value memory.</p>
+  <p>The page reads the counts from the models themselves on every reply: prompt tokens, tokens the 135M read, prompt
+    history the 360M read, and bridge tokens.</p>
+  <p><button class="vbtn" data-goto="ask">See the counters →</button></p></div>
+<div popover id="pop-answers"><button class="close" popovertarget="pop-answers" popovertargetaction="hide" aria-label="Close">×</button>
+  <h4>6 of 7 held-out questions</h4>
+  <p>Seven questions never used in fitting, each with one checkable answer. Bridged, the 360M gets 6 right, as many
+    as the 360M reading everything. With the ridge maps alone, before the paper's learned correction, it kept only
+    the shape of an answer: 3 of 7.</p>
+  <p>Fidelity on held-out replies: NCR 0.930. The paper's corrected bridge, on its own pair: 0.918.</p>
+  <p><a href="https://huggingface.co/agentic-underground/smollm2-135m-to-360m-bridge">The model card →</a></p></div>
+<div popover id="pop-upstream"><button class="close" popovertarget="pop-upstream" popovertargetaction="hide" aria-label="Close">×</button>
+  <h4>LatentPort's own pair, reproduced</h4>
+  <p>Qwen3.5-4B → 27B, timed with upstream's own runtime, timing code and statistic, on two RTX 3090s:
+    1.36× sooner at 128 prompt tokens, 2.94× at ~2K and 3.39× at ~16K.</p>
+  <p>The full tables, every run, and a guide to repeat them are in the repository.</p>
+  <p><a href="https://github.com/agentic-underground/prattle_not/blob/main/documents/EXECUTIVE_SUMMARY.md">The result →</a></p></div>
+<div popover id="pop-ttft"><button class="close" popovertarget="pop-ttft" popovertargetaction="hide" aria-label="Close">×</button>
+  <h4>Time to first token</h4>
+  <p>From pressing Ask to the first token. With the bridge off, the 135M answers alone; with it on, the 360M answers
+    from the 135M's memory, so these two times compare different models. The fair comparison is on the Measure tab.</p></div>
+<div popover id="pop-counters"><button class="close" popovertarget="pop-counters" popovertargetaction="hide" aria-label="Close">×</button>
+  <h4>The counters</h4>
+  <p>Reported by the models after each reply, not computed by the page: how many prompt tokens the reading model
+    read, how much prompt history the answering model read, and how many bridge tokens it read itself.</p>
+  <p>Bridged, the 135M reads all but the last token, the 360M reads none of the prompt, and one bridge token crosses.</p></div>
+<div popover id="pop-controls"><button class="close" popovertarget="pop-controls" popovertargetaction="hide" aria-label="Close">×</button>
+  <h4>Why these controls</h4>
+  <p>An answer that looks right could come from the one token the 360M reads, not the memory. So the same question
+    runs with a <b>different</b> question's memory: if the answer changes, it was reading the memory.</p>
+  <p>Restoring the 135M's own memory must reproduce its reply exactly, which shows the memory is moved without loss.
+    Each run is capped at 32 tokens.</p></div>
+<div popover id="pop-ncr"><button class="close" popovertarget="pop-ncr" popovertargetaction="hide" aria-label="Close">×</button>
+  <h4>NCR, the native-closure ratio</h4>
+  <p><code>(ℓ_empty − ℓ_bridged) / (ℓ_empty − ℓ_native)</code>, the paper's Eq. 8: each ℓ is the larger model's loss on
+    its own native reply. 1 means the bridged model is as sure of that reply as when it reads everything.</p>
+  <p>Read it beside each card's wrong-memory control: where an empty model is very far off, any memory scores high.</p></div>
+
+<script type="module">
+// The control surface: ?model=<folder URL> picks the weights; window.prattle.ask(text) is the
+// same path the input box takes. body[data-state] is loading | ready | thinking | done | error.
+// Without ?model, a models/ folder beside the page wins (prattle-server serves one); otherwise
+// the weights come from Hugging Face, which is what the published page does.
+// The models run in ./worker.js, so no forward pass ever blocks this page. One meta tag picks the
+// engine: webgpu.html is this page with <meta name="prattle-backend" content="webgpu"> (just web).
+const BACKEND = document.querySelector('meta[name="prattle-backend"]')?.content === 'webgpu' ? 'webgpu' : 'cpu';
+
+const $ = id => document.getElementById(id);
+// Both models pinned to a hub commit: what the bridge was fitted on, and what the browser may keep.
+const SOURCE_REV = '12fd25f77366fa6b3b4b768ec3050bf629380bac';
+const TARGET_REV = 'a10cc1512eabd3dde888204e902eca88bddb4951';
+const LOCAL = 'models/SmolLM2-135M-Instruct/';
+const HUB = `https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct/resolve/${SOURCE_REV}/`;
+const TARGET_LOCAL = 'models/SmolLM2-360M-Instruct/';
+const TARGET_HUB = `https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/${TARGET_REV}/`;
+// The fitted 135M → 360M bridge: a local one in models/bridges/ wins; otherwise the published one,
+// pinned to a hub COMMIT so a later upload cannot change what this page measures.
+const BRIDGE_LOCAL = 'models/bridges/smollm2-135m-to-360m.safetensors';
+const BRIDGE_HUB = 'https://huggingface.co/agentic-underground/smollm2-135m-to-360m-bridge/resolve/6793e9e3440c27e39464972e4f399b9cf944ac64/smollm2-135m-to-360m.safetensors';
+// ?fast=1 loads the smallest FAST_LLM — the 135M, the 360M and their bridge as ONE file — instead of
+// the three; ?fast=<url> loads that file.
+const FAST_LOCAL = 'models/fast_llm/smollm2-135m-360m-fast-llm.safetensors';
+const FAST = (() => { const f = new URLSearchParams(location.search).get('fast'); return f === null ? null : f === '1' || f === '' ? FAST_LOCAL : f; })();
+async function pickModel() {
+  const asked = new URLSearchParams(location.search).get('model');
+  if (asked) return asked;
+  try { if ((await fetch(LOCAL + 'config.json', { method: 'HEAD' })).ok) return LOCAL; } catch {}
+  return HUB;
+}
+
+// ---- tabs: a click, the arrow keys, or a #/<name> address ----------------------------------------
+const TABS = ['ask', 'prove', 'measure', 'evidence', 'how'];
+function showTab(name, focus = false) {
+  if (!TABS.includes(name)) name = 'ask';
+  for (const t of TABS) {
+    const on = t === name;
+    $(`tab-${t}`).setAttribute('aria-selected', on);
+    $(`tab-${t}`).tabIndex = on ? 0 : -1;
+    $(`panel-${t}`).hidden = !on;
+  }
+  if (focus) $(`tab-${name}`).focus();
+  if (location.hash !== `#/${name}`) history.replaceState(null, '', name === 'ask' ? location.pathname + location.search : `#/${name}`);
+}
+for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => showTab(t));
+document.querySelector('[role=tablist]').addEventListener('keydown', e => {
+  const i = TABS.findIndex(t => $(`tab-${t}`).getAttribute('aria-selected') === 'true');
+  const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+  if (step) { e.preventDefault(); showTab(TABS[(i + step + TABS.length) % TABS.length], true); }
+});
+document.addEventListener('click', e => {
+  const go = e.target.closest('[data-goto]');
+  if (!go) return;
+  document.querySelectorAll('[popover]').forEach(p => { try { p.hidePopover(); } catch {} });
+  showTab(go.dataset.goto);
+  $(`panel-${go.dataset.goto}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+showTab(location.hash.replace(/^#\/?/, ''));
+
+const set = (state, status) => { document.body.dataset.state = state; $('status').textContent = status; };
+
+// ---- the worker: call(op, args, onMessage) → the op's answer ----------------------------------------
+const WORKER_URL = new URL(BACKEND === 'webgpu' ? './worker.js?backend=webgpu' : './worker.js', import.meta.url);
+for (const [id, on] of [['engine-cpu', BACKEND === 'cpu'], ['engine-gpu', BACKEND === 'webgpu']]) {
+  if (on) $(id).setAttribute('aria-current', 'page');
+  $(id).addEventListener('click', e => { e.preventDefault(); location.href = $(id).getAttribute('href') + location.hash; });
+}
+$('engine-name').textContent = BACKEND === 'webgpu' ? 'WebGPU on your GPU' : 'WebAssembly on your CPU';
+const pending = new Map();
+let nextId = 0;
+// What a fresh worker must be given to stand where this one stood: the reading model, then the
+// target and its bridge once the bridge is on.
+const setup = [];
+let worker, recoveries = 0;
+function startWorker() {
+  worker = new Worker(WORKER_URL, { type: 'module' });
+  worker.onmessage = ({ data }) => {
+    if (data.panic) return /device lost/.test(data.panic) ? recover(data.panic) : set('error', `The model worker failed: ${data.panic}`);
+    const p = pending.get(data.id);
+    if (!p) return;
+    if ('ok' in data) { pending.delete(data.id); p.resolve(data.ok); }
+    else if ('err' in data) { pending.delete(data.id); p.reject(new Error(data.err)); }
+    else p.on?.(data);
+  };
+  // The worker's own report (its panic message, or the trap's stack) says more than this event does;
+  // it is given a moment to arrive first.
+  worker.onerror = e => setTimeout(() => {
+    if (document.body.dataset.state !== 'error') set('error', `The model worker failed: ${e.message || e}`);
+  }, 300);
+}
+// A lost GPU device is recoverable, as WebGPU expects: a fresh worker is given the same models (from
+// the browser's cache) and every call in flight is sent again. Chrome reports its GPU process
+// connection dropping as "a valid external Instance reference no longer exists"; a third loss in one
+// session is reported rather than retried.
+async function recover(why) {
+  if (++recoveries > 2) return set('error', `The GPU was reset again: ${why}`);
+  worker.terminate();
+  const replay = [...pending.entries()].filter(([, p]) => !p.setup);
+  // Chrome restarts its GPU process after such a loss; a device asked for meanwhile never comes.
+  set('loading', 'The GPU was reset; reloading the models…');
+  await new Promise(r => setTimeout(r, 1500));
+  startWorker();
+  for (const { op, args } of setup) await callNow(op, args, showProgress, true);
+  for (const [id, p] of replay) worker.postMessage({ id, op: p.op, args: p.args });
+}
+const callNow = (op, args, on, isSetup = false) => new Promise((resolve, reject) => {
+  const id = ++nextId;
+  pending.set(id, { resolve, reject, on, op, args, setup: isSetup });
+  worker.postMessage({ id, op, args });
+});
+const call = (op, args, on) => {
+  if (op === 'load' || op === 'attach' || op === 'loadFast') setup.push({ op, args });
+  return callNow(op, args, on);
+};
+startWorker();
+let hasTarget = false;
+const loadedFrom = {};
+
+// Download progress in the status pill: "Downloading SmolLM2-360M… 120 / 724 MB".
+const MB = n => (n / 1e6).toFixed(0);
+function showProgress({ progress: p }) {
+  if (!p || p.label.endsWith('config') || p.label.endsWith('tokenizer')) return;
+  if (p.from === 'cache') set('loading', `${p.label} — from this browser's cache`);
+  else if (p.from.startsWith('network')) set('loading', `Downloading ${p.label}… ${MB(p.loaded)}${p.total ? ` / ${MB(p.total)}` : ''} MB`);
+  else set('loading', `Loading ${p.label}…`);
+}
+let lastQuestion = '';
+const sessionTimes = [];
+
+// ---- the instruments: who read what, and this session's first tokens ------------------------------
+function showCounters([n, reader, history, bridge], bridged) {
+  $('prompt-tokens').textContent = n;
+  $('reader-tokens').textContent = reader;
+  $('generator-history').textContent = history;
+  $('bridge-tokens').textContent = bridge;
+  $('flow-reader').textContent = bridged ? reader : n;
+  $('flow-bridge').textContent = bridged ? history + bridge : 0;
+  const [r, b] = $('flow').children;
+  const read = bridged ? reader : n, by = bridged ? history + bridge : 0;
+  r.style.width = n ? `${100 * read / n}%` : '0';
+  b.style.width = n ? `${100 * by / n}%` : '0';
+  for (const id of ['node-bridge', 'node-answer']) $(id).classList.toggle('off', !bridged);
+  $('node-reader').classList.add('on');
+  $('node-bridge').classList.toggle('on', bridged);
+  $('node-answer').classList.toggle('on', bridged);
+  $('arrow-1').classList.toggle('on', bridged);
+  $('arrow-2').classList.toggle('on', bridged);
+  $('flow-note').textContent = bridged
+    ? `Of ${n} prompt tokens, the 135M read ${reader}; the 360M read ${history} of the prompt and ${bridge} bridge token${bridge === 1 ? '' : 's'}. Everything else crossed as memory.`
+    : `Bridge off: the 135M read all ${n} prompt tokens and answered itself. Turn the bridge on to hand its memory to the 360M.`;
+}
+
+function showHistory() {
+  const box = $('history');
+  if (!sessionTimes.length) return;
+  const max = Math.max(...sessionTimes.map(t => t.ms));
+  box.replaceChildren(...sessionTimes.slice(-6).map(t => {
+    const row = document.createElement('div');
+    row.className = 'hrow';
+    const color = t.bridged ? 'var(--answer)' : 'var(--reader)';
+    row.innerHTML = `<span class="lab"></span><span class="track"><span class="fill" style="width:${Math.max(3, 100 * t.ms / max)}%;background:${color}"></span></span><span class="ms">${Math.round(t.ms)} ms</span>`;
+    row.querySelector('.lab').textContent = `${t.bridged ? '360M, bridged' : '135M alone'} · ${t.q}`;
+    row.querySelector('.lab').title = t.q;
+    return row;
+  }));
+}
+
+function setBridgeLook() {
+  const on = $('bridge').checked && hasTarget;
+  document.body.classList.toggle('bridged', !!on);
+  $('bridge-badge').textContent = on ? 'on' : 'off';
+  $('bridge-badge').className = on ? 'badge go' : 'badge';
+}
+
+async function ask(question) {
+  set('thinking', 'Thinking…');
+  $('prompt').disabled = $('send').disabled = true;
+  const bridged = $('bridge').checked;
+  lastQuestion = question;
+  if (!$('controls-question').value.trim() || $('controls-question').dataset.auto === '1') {
+    $('controls-question').value = question;
+    $('controls-question').dataset.auto = '1';
+  }
+  $('asked').textContent = question;
+  $('asked').hidden = false;
+  $('who').textContent = bridged ? 'SmolLM2-360M, answering from the 135M’s memory' : 'SmolLM2-135M, reading the prompt itself';
+  $('reply').textContent = '';
+  $('reply').classList.add('typing');
+  $('ttft').textContent = '—';
+  $(bridged ? 'node-answer' : 'node-reader').classList.add('live');
+  // The clock runs in the worker: from before the prompt is read to the first token.
+  const { ttft_ms: ttft } = await call('ask', { question, bridge: bridged }, m => {
+    if (m.counters) showCounters(m.counters, bridged);
+    if (m.ttft != null) $('ttft').textContent = `${Math.round(m.ttft)} ms`;
+    if (m.piece != null) $('reply').textContent += m.piece;
+  });
+  $('reply').classList.remove('typing');
+  $('node-answer').classList.remove('live');
+  $('node-reader').classList.remove('live');
+  if (ttft !== null) { sessionTimes.push({ ms: ttft, bridged, q: question }); showHistory(); }
+  set('done', 'Ask another.');
+  $('prompt').disabled = $('send').disabled = false;
+  $('prompt').focus();
+  return { reply: $('reply').textContent, ttft_ms: ttft };
+}
+
+// ---- the controls -------------------------------------------------------------------------------
+// A control arm runs to completion in the worker, capped at 32 tokens.
+const runArm = (question, arm, donor) => call('arm', { question, arm, donor });
+
+function verdict(id, ok) {
+  const card = $(id);
+  card.className = `verdict-card ${ok === null ? '' : ok ? 'ok' : 'no'}`;
+  card.querySelector('.ic').textContent = ok === null ? '?' : ok ? '✓' : '✗';
+}
+
+const ARM_IDS = ['native', 'restored', 'bridged', 'donor', 'donor-own'];
+async function controls(question, donor) {
+  if (!hasTarget) throw new Error('turn the bridge on first');
+  set('thinking', 'Running controls…');
+  $('controls').disabled = $('prompt').disabled = true;
+  $('controls-why').textContent = '';
+  const rows = [['native', question, 'native'], ['restored', question, 'restore'], ['bridged', question, 'bridge'],
+                ['donor', question, 'donor', donor], ['donor-own', donor, 'bridge']];
+  const out = {};
+  for (const id of ARM_IDS) {
+    $(`control-${id}`).textContent = '';
+    $(`arm-${id}`).className = 'arm';
+  }
+  verdict('verdict-restore', null);
+  verdict('verdict-follow', null);
+  $('control-verdict').textContent = '';
+  for (const [id, q, arm, d] of rows) {
+    $(`arm-${id}`).classList.add('running');
+    out[id] = await runArm(q, arm, d);
+    $(`arm-${id}`).classList.remove('running');
+    $(`control-${id}`).textContent = out[id];
+  }
+  const restoredOk = out.restored === out.native;
+  // With a fitted bridge the answering model also reads the asked question's last tokens itself,
+  // so a wrong memory cannot reproduce the donor's own reply; what it must do is CHANGE the answer.
+  const followsMemory = out.donor !== out.bridged;
+  $('arm-restored').classList.add(restoredOk ? 'match' : 'differ');
+  $('arm-donor').classList.add(followsMemory ? 'match' : 'differ');
+  verdict('verdict-restore', restoredOk);
+  verdict('verdict-follow', followsMemory);
+  $('control-verdict').textContent =
+    `${restoredOk ? '✓' : '✗'} restoring the model's own memory ${restoredOk ? 'reproduces' : 'does NOT reproduce'} its native reply · ` +
+    `${followsMemory ? '✓' : '✗'} the answer ${followsMemory ? 'changes' : 'does NOT change'} with the transported memory`;
+  set('done', 'Controls done.');
+  $('controls').disabled = $('prompt').disabled = false;
+  return out;
+}
+
+function why(text, action) {
+  const box = $('controls-why');
+  box.className = 'msg bad';
+  box.textContent = text;
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'btn ghost small';
+    b.style.marginLeft = '10px';
+    b.textContent = action.label;
+    b.addEventListener('click', action.run);
+    box.append(b);
+  }
+}
+
+$('controls').addEventListener('click', () => {
+  const q = $('controls-question').value.trim() || lastQuestion, d = $('donor').value.trim();
+  if (document.body.dataset.state === 'thinking' || document.body.dataset.state === 'loading') return why('Wait for the current run to finish.');
+  if (!hasTarget) return why('The controls compare bridged replies, so the bridge needs to be on.',
+    { label: 'Turn the bridge on', run: () => { $('bridge').checked = true; toggleBridge(); } });
+  if (!q) return why('Type a question to test, or ask one on the Ask tab first.');
+  if (!d) return why('Give a different question whose memory should cross instead, or pick one below.');
+  if (d === q) return why('The memory must come from a different question.');
+  $('controls-question').value = q;
+  controls(q, d).catch(e => { set('error', `Controls failed: ${e}`); why(`Controls failed: ${e}`); });
+});
+$('controls-question').addEventListener('input', () => { $('controls-question').dataset.auto = '0'; });
+for (const chip of $('donors').querySelectorAll('.chip'))
+  chip.addEventListener('click', () => { $('donor').value = chip.textContent; $('controls-why').textContent = ''; });
+
+// ---- Measure: documents/REPRODUCTION.md §5 ------------------------------------------------
+const SHORT_PROMPTS = [
+  'What is the capital of France?', 'Name three colours.', 'What is two plus two?', 'Who wrote Hamlet?',
+  'What is the largest ocean?', 'How many legs does a spider have?', 'What gas do plants breathe in?',
+  'What is the boiling point of water?',
+];
+const PROMPTS = 8, REPS = 3;
+
+// One timed run, clocked inside the worker (worker.js § time): the token clock stops when the first
+// token is sampled, the text clock when the first visible text arrives.
+const timeArm = (question, arm) => call('time', { question, arm });
+
+const fmt = (s) => s.length ? `${s[0].toFixed(2)}× (${s[1].toFixed(2)}–${s[2].toFixed(2)}) · median ${s[3].toFixed(2)}×` : '—';
+const asSummary = (s) => s.length ? { speedup: s[0], ci_low: s[1], ci_high: s[2], median_ratio: s[3], prompts: s[4], pairs: s[5] } : null;
+
+// The paired statistic of arm `a` over arm `b` (a ÷ b) on one clock.
+function summaryOf(runs, clock, a = 'target', b = 'bridge') {
+  const by = {};
+  for (const r of runs) (by[`${r.prompt}/${r.rep}`] ??= {})[r.arm] = r[clock];
+  const keys = Object.keys(by).filter(k => by[k][a] != null && by[k][b] != null);
+  return call('summarize', { prompts: keys.map(k => +k.split('/')[0]), native: keys.map(k => by[k][a]), bridge: keys.map(k => by[k][b]) });
+}
+const ARMS = ['target', 'bridge', 'source'];
+
+// Each prompt's own native ÷ bridged, the geometric mean over its repetitions: the dots on a gauge.
+function perPrompt(runs) {
+  const by = {};
+  for (const r of runs) (by[`${r.prompt}/${r.rep}`] ??= {})[r.arm] = r.ttft_token_ms;
+  const logs = {};
+  for (const [k, v] of Object.entries(by)) if (v.target && v.bridge) (logs[k.split('/')[0]] ??= []).push(Math.log(v.target / v.bridge));
+  return Object.values(logs).map(l => Math.exp(l.reduce((a, b) => a + b, 0) / l.length));
+}
+
+// A gauge: 1× to past the ceiling; the hatched band is out of reach, the bar is the interval, the
+// dots are the prompts, the diamond is the estimate.
+function gauge(length, token, ceiling, dots, tokens) {
+  const lo = 1, hi = Math.max(ceiling * 1.12, token[2] * 1.08, 2);
+  const W = 1000, x = v => 20 + (W - 40) * (Math.min(Math.max(v, lo), hi) - lo) / (hi - lo);
+  const ticks = [];
+  for (let t = 1; t <= hi + 1e-9; t += hi > 4 ? 1 : 0.5) ticks.push(t);
+  const svg = `
+    <svg viewBox="0 0 ${W} 92" preserveAspectRatio="none" role="img" aria-label="speed-up ${token[0].toFixed(2)} of a ceiling ${ceiling.toFixed(2)}">
+      <rect x="20" y="30" width="${W - 40}" height="16" rx="8" fill="var(--surface-2)" stroke="var(--line)"/>
+      <rect x="${x(ceiling)}" y="30" width="${W - 20 - x(ceiling)}" height="16" fill="url(#hatch-${length})"/>
+      <defs><pattern id="hatch-${length}" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="8" fill="var(--line-strong)" opacity=".7"/></pattern></defs>
+      <rect x="20" y="30" width="${x(token[0]) - 20}" height="16" rx="8" fill="var(--accent)" opacity=".18"/>
+      <rect x="${x(token[1])}" y="33" width="${Math.max(2, x(token[2]) - x(token[1]))}" height="10" rx="5" fill="var(--accent)"/>
+      ${dots.map(d => `<circle cx="${x(d)}" cy="60" r="4.5" fill="var(--bridge)" opacity=".75"/>`).join('')}
+      <line x1="${x(ceiling)}" x2="${x(ceiling)}" y1="20" y2="54" stroke="var(--answer)" stroke-width="3"/>
+      <text x="${x(ceiling)}" y="14" text-anchor="middle" font-size="13" fill="var(--answer)" font-weight="700">ceiling ${ceiling.toFixed(2)}×</text>
+      <path d="M ${x(token[0])} 24 l 8 14 l -8 14 l -8 -14 z" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/>
+      ${ticks.map(t => `<text x="${x(t)}" y="86" text-anchor="middle" font-size="12" fill="var(--faint)">${t}×</text>`).join('')}
+    </svg>`;
+  const card = document.createElement('div');
+  card.className = 'gauge';
+  card.id = `gauge-${length}`;
+  const label = length === 'short' ? 'short questions' : `${length}-token prompts`;
+  card.innerHTML = `<div class="top"><span class="cap">${label}${tokens ? ` · ~${tokens} tokens` : ''}</span>
+      <span class="big">${token[0].toFixed(2)}×</span><span class="ci">95% CI ${token[1].toFixed(2)}–${token[2].toFixed(2)}</span>
+      <span class="cap">${(100 * (token[0] - 1) / Math.max(ceiling - 1, 1e-9)).toFixed(0)}% of the way to the ceiling</span></div>
+    ${svg}
+    <div class="cap"><span style="color:var(--accent)">◆</span> the estimate, its bar the 95% interval ·
+      <span style="color:var(--bridge)">●</span> each prompt · <span style="color:var(--answer)">|</span> the most a handoff could gain</div>`;
+  return card;
+}
+
+async function measure(lengths) {
+  if (!hasTarget) throw new Error('turn the bridge on first');
+  set('thinking', 'Measuring…');
+  $('measure').disabled = $('prompt').disabled = $('controls').disabled = true;
+  const record = {
+    protocol: 'documents/REPRODUCTION.md §5', device: BACKEND === 'webgpu' ? 'webgpu' : 'cpu-wasm', precision: 'f32',
+    decoding: 'greedy, repeat penalty 1.1 over 64 tokens',
+    source: 'HuggingFaceTB/SmolLM2-135M-Instruct', target: 'HuggingFaceTB/SmolLM2-360M-Instruct',
+    revision: { source: SOURCE_REV, target: TARGET_REV }, loaded_from: { ...loadedFrom },
+    bridge: 'smollm2-135m-to-360m (arXiv:2609.25053v1)',
+    user_agent: navigator.userAgent, lengths: [],
+  };
+  const total = lengths.length * ARMS.length * (1 + PROMPTS * REPS);
+  $('measure-warning').textContent = '';
+  $('measure-progress').hidden = false;
+  const bar = $('measure-progress').firstElementChild;
+  let done = 0;
+  const tick = () => {
+    done++;
+    bar.style.width = `${100 * done / total}%`;
+    $('measure-count').textContent = `${done} / ${total} runs`;
+    set('thinking', `Measuring… ${done}/${total}`);
+  };
+  for (const length of lengths) {
+    const prompts = [];
+    for (let v = 0; v < PROMPTS; v++) {
+      const text = length === 'short' ? SHORT_PROMPTS[v] : await call('synthetic', { tokens: +length, variant: v });
+      prompts.push({ index: v, hash: await call('hash', { text }), tokens: await call('promptTokens', { text }), text });
+    }
+    const warmups = [];
+    for (const arm of ARMS) {
+      warmups.push({ ...(await timeArm(prompts[0].text, arm)), prompt: 0, warmup: true });
+      tick();
+    }
+    const runs = [];
+    for (let p = 0; p < PROMPTS; p++) for (let r = 0; r < REPS; r++) {
+      const lead = await call('firstArm', { prompt: p, rep: r, arms: ARMS.length });
+      for (const arm of [...ARMS.slice(lead), ...ARMS.slice(0, lead)]) {
+        runs.push({ ...(await timeArm(prompts[p].text, arm)), prompt: p, rep: r });
+        tick();
+      }
+    }
+    const token = await summaryOf(runs, 'ttft_token_ms'), text = await summaryOf(runs, 'ttft_text_ms');
+    const ceiling = await summaryOf(runs, 'ttft_token_ms', 'target', 'source');
+    record.lengths.push({ length, prompts: prompts.map(({ text, ...p }) => p), warmups, runs,
+                          summary_token: asSummary(token), summary_text: asSummary(text), ceiling_token: asSummary(ceiling) });
+    const row = document.createElement('tr');
+    row.innerHTML = `<td>${length}</td><td class="num" id="measure-${length}"></td><td class="num" id="measure-text-${length}"></td><td class="num" id="measure-ceiling-${length}"></td>`;
+    $('measure-table').querySelector(`#measure-${CSS.escape(length)}`)?.parentElement.remove();
+    $('measure-table').append(row);
+    $(`measure-${length}`).textContent = fmt(token);
+    $(`measure-text-${length}`).textContent = fmt(text);
+    $(`measure-ceiling-${length}`).textContent = ceiling.length ? `${ceiling[0].toFixed(2)}×` : '—';
+    if (token.length && ceiling.length) {
+      const avg = Math.round(prompts.reduce((a, p) => a + p.tokens, 0) / prompts.length);
+      $(`gauge-${length}`)?.remove();
+      $('gauges').append(gauge(length, token, ceiling[0], perPrompt(runs), avg));
+      if (token[1] <= 1) $('measure-warning').textContent = `At ${length}, the interval reaches 1×: this machine did not show the bridge faster there.`;
+    }
+  }
+  window.prattle.lastResults = record;
+  const blob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' });
+  $('measure-download').href = URL.createObjectURL(blob);
+  $('measure-download').hidden = false;
+  set('done', 'Measured. The ceiling is the most the bridge could gain: the larger model alone ÷ the small one alone.');
+  $('measure').disabled = $('prompt').disabled = $('controls').disabled = false;
+  return record;
+}
+
+const LENGTHS = ['short', '512', '2048'];
+const chosenLengths = () => LENGTHS.filter(l => $(`len-${l}`).checked);
+function lengthsChanged() {
+  const none = !chosenLengths().length;
+  $('measure').disabled = none || !hasTarget || document.body.dataset.state === 'thinking';
+  $('measure-warning').textContent = none ? 'Pick at least one prompt length.' : '';
+}
+for (const l of LENGTHS) $(`len-${l}`).addEventListener('change', lengthsChanged);
+$('measure').addEventListener('click', () => {
+  const lengths = chosenLengths();
+  if (!lengths.length) return lengthsChanged();
+  measure(lengths).catch(e => set('error', `Measure failed: ${e}`));
+});
+
+// ---- the family of bridges, from each published card ---------------------------------------------
+const FAMILIES = [
+  ['SmolLM2-135M → 360M', 'smollm2-135m-to-360m-bridge', 'this page’s pair', 0.930, null, null, ''],
+  ['SmolLM2-360M → 1.7B', 'smollm2-360m-to-1.7b-bridge', 'a five-times gap', 0.845, 1.67, 2.59, ''],
+  ['Qwen3-0.6B → 1.7B', 'qwen3-0.6b-to-1.7b-bridge', 'a second family', 0.805, 1.47, 2.03, ''],
+  ['Qwen3-4B → 8B', 'qwen3-4b-to-8b-bridge', 'Qwen3 at 8B', 0.890, 1.12, 1.61, 'two cards'],
+  ['Qwen3-0.6B → 8B', 'qwen3-0.6b-to-8b-bridge', 'a 13.6× gap', 0.803, 2.82, 6.03, ''],
+  ['Gemma 3 270M → 1B', 'gemma-3-270m-to-1b-bridge', 'gated, Gemma Terms of Use', 0.870, 1.91, 2.79, ''],
+  ['Llama 3.2 1B → 3B', 'llama-3.2-1b-to-3b-bridge', 'Built with Llama · gated', 0.965, 1.70, 2.54, ''],
+  ['Qwen3.5-0.8B → 2B', 'qwen3.5-0.8b-to-2b-bridge', 'attention + recurrent', 0.917, 1.36, 1.50, ''],
+  ['Qwen3.5-4B → 9B', 'qwen3.5-4b-to-9b-bridge', 'LatentPort’s own pair', 0.989, 1.16, 1.38, 'two cards'],
+  ['LFM2-350M → 1.2B', 'lfm2-350m-to-1.2b-bridge', 'short convolutions · gated', 0.978, 1.88, 2.50, ''],
+  ['Granite 4.0 H 1B → H Tiny', 'granite-4.0-h-1b-to-h-tiny-bridge', 'Mamba-2 inputs translated · 64 experts', 0.924, 2.06, 3.95, 'host-CPU sensitive'],
+  ['Qwen3-0.6B → 32B', 'qwen3-0.6b-to-32b-bridge', 'Q4K 32B · 6 of 7, below the answer bar', 0.866, 4.21, 11.60, 'two cards'],
+];
+{
+  // Speed-ups on a log scale, so a 1.2× pair and an 11× pair are both legible on one axis.
+  const box = $('families'), MAXS = Math.max(3, ...FAMILIES.map(f => f[5] ?? 0)) * 1.05;
+  const at = v => 100 * Math.log(v) / Math.log(MAXS);
+  for (const [name, repo, note, ncr, sp, ceil, where] of FAMILIES) {
+    const n = document.createElement('div');
+    n.className = 'name';
+    n.innerHTML = `<a href="https://huggingface.co/agentic-underground/${repo}"></a><small></small>`;
+    n.firstChild.textContent = name;
+    n.lastChild.textContent = note;
+    const f = document.createElement('div');
+    f.innerHTML = `<div class="mini"><div class="f" style="width:${100 * ncr}%;background:var(--good);opacity:.35"></div><div class="lab">${ncr.toFixed(3)}</div></div>`;
+    const s = document.createElement('div');
+    s.className = 'sp';
+    s.innerHTML = sp
+      ? `<div class="mini"><div class="ceil" style="left:${at(sp)}%;width:${at(ceil) - at(sp)}%"></div><div class="f" style="width:${at(sp)}%;background:var(--accent);opacity:.45"></div><div class="lab">${sp.toFixed(2)}× of ${ceil.toFixed(2)}×${where ? ' · ' + where : ''}</div></div>`
+      : `<div class="mini"><div class="lab" style="color:var(--muted)">1.87× in your browser, on the Measure tab</div></div>`;
+    box.append(n, f, s);
+  }
+}
+
+window.prattle = { ask, model: null, controls, measure, loadedFrom, memory: () => call('memory'), bridge: on => { $('bridge').checked = on; return toggleBridge(); } };
+
+async function toggleBridge() {
+  setBridgeLook();
+  if (!$('bridge').checked || hasTarget) return;
+  set('loading', 'Loading the answering model…');
+  $('prompt').disabled = $('bridge').disabled = $('send').disabled = true;
+  try {
+    const local = window.prattle.model === LOCAL && (await fetch(TARGET_LOCAL + 'config.json', { method: 'HEAD' })).ok;
+    const bridge = new URL((await fetch(BRIDGE_LOCAL, { method: 'HEAD' })).ok ? BRIDGE_LOCAL : BRIDGE_HUB, location.href).href;
+    Object.assign(loadedFrom, await call('attach', { base: new URL(local ? TARGET_LOCAL : TARGET_HUB, location.href).href, label: 'SmolLM2-360M', bridge }, showProgress));
+    hasTarget = true;
+    const source = $('bridge-source');
+    source.href = bridge;
+    source.textContent = bridge === BRIDGE_HUB ? 'agentic-underground/smollm2-135m-to-360m-bridge @ ' + bridge.split('/resolve/')[1].slice(0, 7)
+                                               : 'fitted on this machine (' + BRIDGE_LOCAL + ')';
+    source.parentElement.hidden = false;
+    set('ready', 'Bridge on. Ask anything.');
+    $('controls').disabled = false;
+    lengthsChanged();
+    $('controls-why').textContent = '';
+  } catch (e) {
+    $('bridge').checked = false;
+    set('error', `Could not load the answering model: ${e}`);
+  }
+  setBridgeLook();
+  $('prompt').disabled = $('bridge').disabled = $('send').disabled = false;
+}
+$('bridge').addEventListener('change', toggleBridge);
+
+$('ask').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const q = $('prompt').value.trim();
+  if (!q || document.body.dataset.state === 'thinking' || document.body.dataset.state === 'loading') return;
+  $('prompt').value = '';
+  ask(q).catch(e => set('error', `Generation failed: ${e}`));
+});
+for (const chip of $('examples').querySelectorAll('.chip'))
+  chip.addEventListener('click', () => { $('prompt').value = chip.textContent; $('ask').requestSubmit(); });
+
+const model = await pickModel();
+window.prattle.model = model;
+window.prattle.backend = BACKEND;
+try {
+  // Only whether WebGPU exists is asked here: the adapter is the worker's to request and hold. An
+  // adapter requested on this thread and then collected took the worker's device with it ("a valid
+  // external Instance reference no longer exists"), about one load in five.
+  // `in`, not the getter: reading navigator.gpu makes this thread's GPU object, which nothing here uses.
+  if (BACKEND === 'webgpu' && !('gpu' in navigator)) {
+    // A browser offers WebGPU only to a secure page: https, or this machine's own localhost.
+    const why = window.isSecureContext ? 'this browser has no WebGPU' : 'WebGPU needs a secure page: open it over https, or as localhost on this machine';
+    $('no-webgpu').hidden = false;
+    $('no-webgpu').firstChild.textContent = `WebGPU cannot run here: ${why}. `;
+    throw new Error(why);
+  }
+  window.prattle.engine = await call('backend');
+  if (FAST) {
+    set('loading', `Loading one FAST_LLM file from ${FAST}…`);
+    Object.assign(loadedFrom, await call('loadFast', { url: new URL(FAST, location.href).href, label: 'FAST_LLM' }, showProgress));
+    hasTarget = true;
+    window.prattle.fast = FAST;
+    const source = $('bridge-source');
+    source.href = FAST;
+    source.textContent = `one FAST_LLM file (${FAST.split('/').pop()})`;
+    source.parentElement.hidden = false;
+  } else {
+    set('loading', `Loading the model from ${model === HUB ? 'Hugging Face' : model}…`);
+    const base = new URL(model, location.href).href;
+    Object.assign(loadedFrom, await call('load', { base: base.endsWith('/') ? base : base + '/', label: 'SmolLM2-135M' }, showProgress));
+  }
+  set('ready', 'Ask anything.');
+  $('prompt').disabled = $('bridge').disabled = $('send').disabled = false;
+  $('controls').disabled = false;
+  $('prompt').focus();
+} catch (e) {
+  if (BACKEND === 'webgpu' && /adapter/.test(String(e))) $('no-webgpu').hidden = false;
+  set('error', `Could not load the model from ${model}: ${e}`);
+}
+
+$('forget').addEventListener('click', async () => {
+  try {
+    const gone = await caches.delete('prattle-weights-v1');
+    $('forget-note').textContent = gone ? 'Forgotten. The next load downloads them again.' : 'Nothing was kept.';
+  } catch (e) { $('forget-note').textContent = `This browser would not say: ${e}`; }
+});
+</script>
+</body>
+</html>

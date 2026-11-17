@@ -1,0 +1,17 @@
+[workspace]
+members = ["crates/core", "crates/oracle", "crates/server", "crates/web", "crates/webgpu"]
+exclude = ["vendor"]
+resolver = "3"
+
+# candle-core 0.11.0 with one change, its backward pass skipping operands that track no gradient — so
+# a backward through a FROZEN model allocates no gradients for its weights. vendor/candle-core/PATCHED.md
+# says what changed and why.
+[patch.crates-io]
+candle-core = { path = "vendor/candle-core" }
+
+[workspace.package]
+edition = "2024"
+publish = false
+
+[profile.release]
+opt-level = 3

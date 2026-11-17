@@ -1,0 +1,25 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_session_free: (a: number, b: number) => void;
+export const first_arm: (a: number, b: number, c: number) => number;
+export const prompt_hash: (a: number, b: number) => [number, number];
+export const session_attach_target_bytes: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const session_counters: (a: number) => [number, number];
+export const session_from_bytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+export const session_from_fast_llm: (a: number, b: number) => [number, number, number];
+export const session_has_target: (a: number) => number;
+export const session_prompt_tokens: (a: number, b: number, c: number) => [number, number, number];
+export const session_start: (a: number, b: number, c: number, d: number) => [number, number];
+export const session_start_arm: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number];
+export const session_step: (a: number) => [number, number, number, number];
+export const session_synthetic_prompt: (a: number, b: number, c: number) => [number, number, number, number];
+export const summarize: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+export const __wbindgen_exn_store: (a: number) => void;
+export const __externref_table_alloc: () => number;
+export const __wbindgen_export_2: WebAssembly.Table;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_start: () => void;
