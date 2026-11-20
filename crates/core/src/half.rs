@@ -67,22 +67,22 @@ impl candle_core::CustomOp1 for QGrad {
     }
 }
 
-/// While a model is being built under `quantizing`: the quantization, every linear weight already
-/// quantized on the host (taken as each layer is built), and the card the weights go to.
+/// While a model is being built under `quantizing`: the quantization, and every linear weight already
+/// quantized on the host (taken as each layer is built).
 struct Quantizing {
     quant: GgmlDType,
     ready: std::collections::HashMap<String, QTensor>,
-    device: Device,
 }
 
 impl Quantizing {
-    /// The weight `name`, quantized ahead on the host, placed on the card.
-    fn take(&mut self, name: &str, dims: &[usize]) -> Result<QMatMul> {
+    /// The weight `name`, quantized ahead on the host, placed on `device` — its layer's card, which is
+    /// the VarBuilder's, so one model's layers can span several cards.
+    fn take(&mut self, name: &str, dims: &[usize], device: &Device) -> Result<QMatMul> {
         let host = self.ready.remove(name).ok_or_else(|| candle_core::Error::Msg(format!("{name}: not quantized ahead of the build")))?;
         if host.shape().dims() != dims {
             candle_core::bail!("{name}: shape {:?}, expected {dims:?}", host.shape());
         }
-        let storage = QStorage::from_data(host.data()?, &self.device, self.quant)?;
+        let storage = QStorage::from_data(host.data()?, device, self.quant)?;
         QMatMul::from_qtensor(QTensor::new(storage, host.shape().clone())?)
     }
 }
@@ -116,7 +116,7 @@ pub fn experts(vb: &VarBuilder, (n, out_dim, in_dim): (usize, usize, usize), nam
     let quantized = QUANTIZING.with(|q| -> Result<Option<Experts>> {
         let mut q = q.borrow_mut();
         let Some(q) = q.as_mut() else { return Ok(None) };
-        (0..n).map(|e| q.take(&format!("{full}#{e}"), &[out_dim, in_dim])).collect::<Result<Vec<_>>>().map(|v| Some(Experts::Quant(v)))
+        (0..n).map(|e| q.take(&format!("{full}#{e}"), &[out_dim, in_dim], vb.device())).collect::<Result<Vec<_>>>().map(|v| Some(Experts::Quant(v)))
     })?;
     match quantized {
         Some(x) => Ok(x),
@@ -146,7 +146,8 @@ pub fn quantize_with<T>(quant: GgmlDType, weights: &Shared, ready: Option<std::c
 /// As `quantizing`, with the linear weights already quantized — read from a pre-quantized file
 /// (`crate::fast_llm`), keyed as `Shared::quantize_linears` keys them — so none is quantized again.
 pub fn with_quantized<T>(quant: GgmlDType, ready: std::collections::HashMap<String, QTensor>, device: &Device, build: impl FnOnce() -> Result<T>) -> Result<T> {
-    QUANTIZING.with(|q| *q.borrow_mut() = Some(Quantizing { quant, ready, device: device.clone() }));
+    let _ = device; // each weight goes to its own builder's device
+    QUANTIZING.with(|q| *q.borrow_mut() = Some(Quantizing { quant, ready }));
     let out = build();
     QUANTIZING.with(|q| *q.borrow_mut() = None);
     out
@@ -160,7 +161,7 @@ pub fn linear(in_dim: usize, out_dim: usize, vb: VarBuilder) -> Result<Lin> {
         if !q.ready.contains_key(&name) {
             return Ok(None); // not quantized ahead (a router): it stays at the builder's precision
         }
-        Ok(Some(Lin::Quant(q.take(&name, &[out_dim, in_dim])?)))
+        Ok(Some(Lin::Quant(q.take(&name, &[out_dim, in_dim], vb.device())?)))
     })?;
     match quantized {
         Some(l) => Ok(l),
@@ -168,32 +169,69 @@ pub fn linear(in_dim: usize, out_dim: usize, vb: VarBuilder) -> Result<Lin> {
     }
 }
 
-/// One safetensors buffer read by two VarBuilders at once — the card's and the host's — without a
-/// second copy of a model that may be tens of GB.
+/// One safetensors buffer read by several VarBuilders at once — the card's and the host's — without a
+/// second copy of a model that may be tens of GB. A PART of a larger file (a FAST_LLM's `source.` or
+/// `target.`) is read in place: its tensors are the file's names under `prefix`, the prefix removed,
+/// less any under `hidden`.
 #[derive(Clone)]
-pub struct Shared(Arc<candle_core::safetensors::BufferedSafetensors>);
+pub struct Shared {
+    file: Arc<candle_core::safetensors::BufferedSafetensors>,
+    prefix: String,
+    hidden: Option<String>,
+}
 
 impl Shared {
     pub fn new(weights: Vec<u8>) -> Result<Self> {
-        Ok(Shared(Arc::new(candle_core::safetensors::BufferedSafetensors::new(weights)?)))
+        Ok(Shared { file: Arc::new(candle_core::safetensors::BufferedSafetensors::new(weights)?), prefix: String::new(), hidden: None })
     }
+
+    /// The tensors under `prefix`, less those under `hidden` (both full names in the file), as a model
+    /// of their own — the same buffer, never copied.
+    pub fn part(&self, prefix: &str, hidden: Option<&str>) -> Self {
+        Shared { file: self.file.clone(), prefix: format!("{}{prefix}", self.prefix), hidden: hidden.map(str::to_string) }
+    }
+
+    /// Whether `self` and `other` read one buffer.
+    pub fn shares_buffer(&self, other: &Shared) -> bool {
+        Arc::ptr_eq(&self.file, &other.file)
+    }
+
     pub fn builder(&self, dtype: DType, device: &Device) -> VarBuilder<'static> {
         VarBuilder::from_backend(Box::new(self.clone()), dtype, device.clone())
     }
 
+    fn full(&self, name: &str) -> String {
+        format!("{}{name}", self.prefix)
+    }
+
+    /// Every tensor this reads, by its name here, with its shape.
+    pub fn tensors(&self) -> Vec<(String, Vec<usize>)> {
+        self.file
+            .tensors()
+            .into_iter()
+            .filter(|(n, _)| self.hidden.as_ref().is_none_or(|h| !n.starts_with(h.as_str())))
+            .filter_map(|(n, v)| n.strip_prefix(self.prefix.as_str()).map(|rest| (rest.to_string(), v.shape().to_vec())))
+            .collect()
+    }
+
+    /// One tensor's stored bytes.
+    pub fn data(&self, name: &str) -> Result<&[u8]> {
+        Ok(self.file.get(&self.full(name))?.data())
+    }
+
     /// Every 2-D `.weight` that is neither an embedding nor a router, and every expert of every stacked
-    /// `block_sparse_moe` weight (keyed `name#e`), quantized on the host — one worker per core, each taking
-    /// the next tensor, at most 16 so the f32 copies in flight stay a few GB. A router stays at the
+    /// `block_sparse_moe` weight (keyed `name#e`), quantized on the host — one worker per allowed thread (`device::cpu_workers`),
+    /// each taking the next tensor, at most 16 so the f32 copies in flight stay a few GB. A router stays at the
     /// builder's precision: quantizing it could change which experts a token picks.
     pub fn quantize_linears(&self, quant: GgmlDType) -> Result<std::collections::HashMap<String, QTensor>> {
         // one item per tensor: a linear weight, or a whole expert stack (loaded once, its experts quantized
         // in turn — loading the stack per expert re-read it 72 times for a 72-expert layer)
         let mut items: Vec<(String, bool)> = Vec::new();
         // a multimodal checkpoint's towers are not loaded, and their widths need not divide a block
-        let tensors = self.0.tensors();
+        let tensors = self.tensors();
         let language_only = tensors.iter().any(|(n, _)| n.contains("language_model."));
         for (n, v) in tensors {
-            let rank = v.shape().len();
+            let rank = v.len();
             if !n.ends_with(".weight") || n.contains("embed") || n.contains("router") || (language_only && !n.contains("language_model.")) {
                 continue;
             }
@@ -204,7 +242,7 @@ impl Shared {
             }
         }
         let next = std::sync::atomic::AtomicUsize::new(0);
-        let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).clamp(1, 16).min(items.len().max(1));
+        let workers = crate::device::cpu_workers().min(items.len().max(1));
         let parts: Vec<Result<Vec<(String, QTensor)>>> = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..workers)
                 .map(|_| {
@@ -214,14 +252,14 @@ impl Shared {
                             let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             let Some((name, stack)) = items.get(i) else { break Ok(out) };
                             if !stack {
-                                let w = SimpleBackend::get_unchecked(&*self.0, name, DType::F32, &Device::Cpu)?;
+                                let w = SimpleBackend::get_unchecked(self, name, DType::F32, &Device::Cpu)?;
                                 out.push((name.clone(), QTensor::quantize(&w, quant)?));
                                 continue;
                             }
                             // the stack at its stored precision, each expert widened to f32 on its own — as a
                             // fresh tensor, not a view: quantizing reads the storage from its start, so a view at
                             // expert e's offset (and `copy`, which keeps the offset) gives every expert expert 0's
-                            let all = SimpleBackend::get_unchecked(&*self.0, name, DType::BF16, &Device::Cpu)?;
+                            let all = SimpleBackend::get_unchecked(self, name, DType::BF16, &Device::Cpu)?;
                             for e in 0..all.dim(0)? {
                                 let slice = all.get(e)?;
                                 let w = Tensor::from_vec(slice.to_dtype(DType::F32)?.flatten_all()?.to_vec1::<f32>()?, slice.dims(), &Device::Cpu)?;
@@ -243,13 +281,13 @@ impl Shared {
 
 impl SimpleBackend for Shared {
     fn get(&self, s: Shape, name: &str, h: candle_nn::Init, dtype: DType, dev: &Device) -> Result<Tensor> {
-        SimpleBackend::get(&*self.0, s, name, h, dtype, dev)
+        SimpleBackend::get(&*self.file, s, &self.full(name), h, dtype, dev)
     }
     fn get_unchecked(&self, name: &str, dtype: DType, dev: &Device) -> Result<Tensor> {
-        SimpleBackend::get_unchecked(&*self.0, name, dtype, dev)
+        SimpleBackend::get_unchecked(&*self.file, &self.full(name), dtype, dev)
     }
     fn contains_tensor(&self, name: &str) -> bool {
-        SimpleBackend::contains_tensor(&*self.0, name)
+        SimpleBackend::contains_tensor(&*self.file, &self.full(name))
     }
 }
 

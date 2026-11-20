@@ -20,6 +20,11 @@ pub fn stop() {
     LISTENER.with(|l| *l.borrow_mut() = None);
 }
 
+/// Whether a listener is installed on this thread — an attention layer then keeps its whole matrix.
+pub fn listening() -> bool {
+    LISTENER.with(|l| l.borrow().is_some())
+}
+
 /// Called by an attention layer with its probabilities.
 pub fn attention(p: &Tensor) -> Result<()> {
     LISTENER.with(|l| match l.borrow().as_ref() {

@@ -5,14 +5,21 @@
 use wgpu::util::DeviceExt;
 
 pub mod bridge;
+pub mod decoder;
+pub mod lfm2;
 pub mod llama;
 pub mod model;
+pub mod qwen35;
+pub mod stream;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
-/// A tensor on the GPU: f32 values, row-major, of `shape`.
+/// A tensor on the GPU, row-major, of `shape`: f32 values, or — `half` — f16 values packed two to a
+/// u32, which only a weight read by `matmul` or `embed` may be.
+#[derive(Clone)]
 pub struct GpuTensor {
     pub shape: Vec<usize>,
+    pub half: bool,
     buffer: wgpu::Buffer,
 }
 
@@ -20,7 +27,7 @@ impl GpuTensor {
     /// The same values under another shape of the same size, sharing the buffer.
     pub fn view(&self, shape: &[usize]) -> GpuTensor {
         assert_eq!(shape.iter().product::<usize>(), self.len(), "view {:?} of {:?}", shape, self.shape);
-        GpuTensor { shape: shape.to_vec(), buffer: self.buffer.clone() }
+        GpuTensor { shape: shape.to_vec(), half: self.half, buffer: self.buffer.clone() }
     }
 
     pub fn len(&self) -> usize {
@@ -61,6 +68,15 @@ pub struct Gpu {
     uniforms: wgpu::Buffer,
     slot: std::cell::Cell<usize>,
     matmul: Kernel,
+    matmul_h: Kernel,
+    embed_h: Kernel,
+    split_halves: Kernel,
+    mul_sigmoid: Kernel,
+    l2norm_heads: Kernel,
+    gdn_gates: Kernel,
+    conv_silu: Kernel,
+    mul_cols: Kernel,
+    delta: Kernel,
     rms_norm: Kernel,
     embed: Kernel,
     rope: Kernel,
@@ -105,6 +121,235 @@ fn main(@builtin(local_invocation_id) l: vec3<u32>, @builtin(workgroup_id) wg: v
 }
 "#;
 
+/// MATMUL with W in f16, two values to a u32: the same tiles, each weight unpacked as it is staged.
+const MATMUL_H: &str = r#"
+struct Dims { m: u32, n: u32, k: u32, xoff: u32 };
+@group(0) @binding(0) var<storage, read> x: array<f32>;
+@group(0) @binding(1) var<storage, read> w: array<u32>;
+@group(0) @binding(2) var<storage, read_write> y: array<f32>;
+@group(0) @binding(3) var<uniform> d: Dims;
+const T: u32 = 16u;
+var<workgroup> xs: array<array<f32, 16>, 16>;
+var<workgroup> ws: array<array<f32, 16>, 16>;
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(local_invocation_id) l: vec3<u32>, @builtin(workgroup_id) wg: vec3<u32>) {
+    let row = wg.y * T + l.y;
+    let col = wg.x * T + l.x;
+    let wrow = wg.x * T + l.y;
+    var acc = 0.0;
+    let tiles = (d.k + T - 1u) / T;
+    for (var t = 0u; t < tiles; t = t + 1u) {
+        let kk = t * T + l.x;
+        var xv = 0.0;
+        if (row < d.m && kk < d.k) { xv = x[(row + d.xoff) * d.k + kk]; }
+        xs[l.y][l.x] = xv;
+        var wv = 0.0;
+        if (wrow < d.n && kk < d.k) {
+            let e = wrow * d.k + kk;
+            wv = unpack2x16float(w[e >> 1u])[e & 1u];
+        }
+        ws[l.y][l.x] = wv;
+        workgroupBarrier();
+        for (var i = 0u; i < T; i = i + 1u) { acc = acc + xs[l.y][i] * ws[l.x][i]; }
+        workgroupBarrier();
+    }
+    if (row < d.m && col < d.n) { y[row * d.n + col] = acc; }
+}
+"#;
+
+/// EMBED from an f16 table.
+const EMBED_H: &str = r#"
+struct P { h: u32, n: u32, pad0: u32, pad1: u32 };
+@group(0) @binding(0) var<storage, read> ids: array<u32>;
+@group(0) @binding(1) var<storage, read> table: array<u32>;
+@group(0) @binding(2) var<storage, read_write> y: array<f32>;
+@group(0) @binding(3) var<uniform> p: P;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+    let i = g.x;
+    if (i >= p.h * p.n) { return; }
+    let e = ids[i / p.h] * p.h + i % p.h;
+    y[i] = unpack2x16float(table[e >> 1u])[e & 1u];
+}
+"#;
+
+/// Each head's two halves apart: x (n × heads × 2·hd) → a, b (n × heads × hd) — Qwen3.5's query and
+/// its gate, which one projection writes side by side per head.
+const SPLIT_HALVES: &str = r#"
+struct P { n: u32, heads: u32, hd: u32, pad0: u32 };
+@group(0) @binding(0) var<storage, read> x: array<f32>;
+@group(0) @binding(1) var<storage, read_write> a: array<f32>;
+@group(0) @binding(2) var<storage, read_write> b: array<f32>;
+@group(0) @binding(3) var<uniform> p: P;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) g: vec3<u32>) {
+    let i = g.x;
+    if (i >= p.n * p.heads * p.hd) { return; }
+    let src = (i / p.hd) * 2u * p.hd + i % p.hd;
+    a[i] = x[src];
+    b[i] = x[src + p.hd];
+}
+"#;
+
+/// x ← x · σ(g), elementwise, in place: gated attention's output gate.
+const MUL_SIGMOID: &str = r#"
+struct P { n: u32, pad0: u32, pad1: u32, pad2: u32 };
+@group(0) @binding(0) var<storage, read_write> x: array<f32>;
+@group(0) @binding(1) var<storage, read> g: array<f32>;
+@group(0) @binding(2) var<uniform> p: P;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= p.n) { return; }
+    x[i] = x[i] / (1.0 + exp(-g[i]));
+}
+"#;
+
+/// L2 normalisation of the first heads of each row, in place: row r's head h is the `d` values from
+/// r·width + h·d, divided by √(Σx² + 1e-6), and the first `scaled` heads multiplied by `scale` — Gated
+/// DeltaNet's queries (scaled by 1/√d) and keys. One workgroup per (row, head).
+const L2NORM_HEADS: &str = r#"
+struct P { width: u32, d: u32, scaled: u32, scale: f32 };
+@group(0) @binding(0) var<storage, read_write> x: array<f32>;
+@group(0) @binding(1) var<uniform> p: P;
+var<workgroup> part: array<f32, 64>;
+@compute @workgroup_size(64)
+fn main(@builtin(local_invocation_id) l: vec3<u32>, @builtin(workgroup_id) wg: vec3<u32>) {
+    let base = wg.x * p.width + wg.y * p.d;
+    var s = 0.0;
+    for (var i = l.x; i < p.d; i = i + 64u) { let v = x[base + i]; s = s + v * v; }
+    part[l.x] = s;
+    workgroupBarrier();
+    for (var st = 32u; st > 0u; st = st >> 1u) {
+        if (l.x < st) { part[l.x] = part[l.x] + part[l.x + st]; }
+        workgroupBarrier();
+    }
+    var r = 1.0 / sqrt(part[0] + 1e-6);
+    if (wg.y < p.scaled) { r = r * p.scale; }
+    for (var i = l.x; i < p.d; i = i + 64u) { x[base + i] = x[base + i] * r; }
+}
+"#;
+
+/// Gated DeltaNet's per-step gates, in place over (n × heads): a ← exp(−exp(A_log)·softplus(a + dt_bias)),
+/// the decay; b ← σ(b), beta. `neg_a` holds −exp(A_log). softplus as max(x, 0) + log(1 + e^−|x|), so a
+/// large input gives a finite decay.
+const GDN_GATES: &str = r#"
+struct P { n: u32, heads: u32, pad0: u32, pad1: u32 };
+@group(0) @binding(0) var<storage, read_write> a: array<f32>;
+@group(0) @binding(1) var<storage, read_write> b: array<f32>;
+@group(0) @binding(2) var<storage, read> neg_a: array<f32>;
+@group(0) @binding(3) var<storage, read> dt: array<f32>;
+@group(0) @binding(4) var<uniform> p: P;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= p.n) { return; }
+    let h = i % p.heads;
+    let v = a[i] + dt[h];
+    let sp = max(v, 0.0) + log(1.0 + exp(-abs(v)));
+    a[i] = exp(neg_a[h] * sp);
+    b[i] = 1.0 / (1.0 + exp(-b[i]));
+}
+"#;
+
+/// A causal depthwise conv: raw (n × ch) after the state's k − 1 rows (oldest first),
+/// y[t, c] = Σ_j w[c, j] · padded[t + j, c], then SiLU when `silu` is 1 (Gated DeltaNet) and nothing
+/// when 0 (LFM2's short conv); `rows` gets the last k − 1 rows of the padded input — the state after
+/// these tokens.
+const CONV_SILU: &str = r#"
+struct P { n: u32, ch: u32, k: u32, silu: u32 };
+@group(0) @binding(0) var<storage, read> raw: array<f32>;
+@group(0) @binding(1) var<storage, read> w: array<f32>;
+@group(0) @binding(2) var<storage, read> st: array<f32>;
+@group(0) @binding(3) var<storage, read_write> y: array<f32>;
+@group(0) @binding(4) var<storage, read_write> rows: array<f32>;
+@group(0) @binding(5) var<uniform> p: P;
+fn padded(r: u32, c: u32) -> f32 {
+    if (r < p.k - 1u) { return st[r * p.ch + c]; }
+    return raw[(r - (p.k - 1u)) * p.ch + c];
+}
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    let t = i / p.ch;
+    let c = i % p.ch;
+    if (t < p.n) {
+        var acc = 0.0;
+        for (var j = 0u; j < p.k; j = j + 1u) { acc = acc + w[c * p.k + j] * padded(t + j, c); }
+        if (p.silu == 1u) { acc = acc / (1.0 + exp(-acc)); }
+        y[i] = acc;
+    }
+    if (t < p.k - 1u) { rows[t * p.ch + c] = padded(p.n + t, c); }
+}
+"#;
+
+/// Products of column ranges: y[r, c] = a[r·wa + oa + c] · b[r·wb + ob + c] for y n × w — LFM2's B·x and
+/// C·conv, each a slice of one projection's row.
+const MUL_COLS: &str = r#"
+struct P { n: u32, w: u32, wa: u32, oa: u32, wb: u32, ob: u32, pad0: u32, pad1: u32 };
+@group(0) @binding(0) var<storage, read> a: array<f32>;
+@group(0) @binding(1) var<storage, read> b: array<f32>;
+@group(0) @binding(2) var<storage, read_write> y: array<f32>;
+@group(0) @binding(3) var<uniform> p: P;
+@compute @workgroup_size(256)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= p.n * p.w) { return; }
+    let r = i / p.w;
+    let c = i % p.w;
+    y[i] = a[r * p.wa + p.oa + c] * b[r * p.wb + p.ob + c];
+}
+"#;
+
+/// The gated delta rule, token by token, its state S (heads × dk × dv) resident and updated in place.
+/// One workgroup per value head, one invocation per value column j, holding S[:, j]: per token,
+/// S ← decay·S; delta = (v − Sᵀk)·beta; S ← S + k·deltaᵀ; o = Sᵀq. q, k (already normalised) and v are
+/// read from the conv's output row: [q heads | k heads | v heads]; value head h reads key head
+/// h / (heads / key heads).
+const DELTA: &str = r#"
+struct P { n: u32, kk: u32, vh: u32, dk: u32, dv: u32, ch: u32, pad0: u32, pad1: u32 };
+@group(0) @binding(0) var<storage, read> mixed: array<f32>;
+@group(0) @binding(1) var<storage, read> decay: array<f32>;
+@group(0) @binding(2) var<storage, read> beta: array<f32>;
+@group(0) @binding(3) var<storage, read_write> st: array<f32>;
+@group(0) @binding(4) var<storage, read_write> o: array<f32>;
+@group(0) @binding(5) var<uniform> p: P;
+var<workgroup> qs: array<f32, 128>;
+var<workgroup> ks: array<f32, 128>;
+@compute @workgroup_size(128)
+fn main(@builtin(local_invocation_id) l: vec3<u32>, @builtin(workgroup_id) wg: vec3<u32>) {
+    let h = wg.x;
+    let j = l.x;
+    let kh = h / (p.vh / p.kk);
+    var s: array<f32, 128>;
+    if (j < p.dv) {
+        for (var i = 0u; i < p.dk; i = i + 1u) { s[i] = st[(h * p.dk + i) * p.dv + j]; }
+    }
+    for (var t = 0u; t < p.n; t = t + 1u) {
+        let row = t * p.ch;
+        if (j < p.dk) {
+            qs[j] = mixed[row + kh * p.dk + j];
+            ks[j] = mixed[row + p.kk * p.dk + kh * p.dk + j];
+        }
+        workgroupBarrier();
+        if (j < p.dv) {
+            let g = decay[t * p.vh + h];
+            var kv = 0.0;
+            for (var i = 0u; i < p.dk; i = i + 1u) { s[i] = s[i] * g; kv = kv + s[i] * ks[i]; }
+            let dlt = (mixed[row + 2u * p.kk * p.dk + h * p.dv + j] - kv) * beta[t * p.vh + h];
+            var acc = 0.0;
+            for (var i = 0u; i < p.dk; i = i + 1u) { s[i] = s[i] + ks[i] * dlt; acc = acc + s[i] * qs[i]; }
+            o[t * p.vh * p.dv + h * p.dv + j] = acc;
+        }
+        workgroupBarrier();
+    }
+    if (j < p.dv) {
+        for (var i = 0u; i < p.dk; i = i + 1u) { st[(h * p.dk + i) * p.dv + j] = s[i]; }
+    }
+}
+"#;
+
 /// RMSNorm over each row of x (m × d), scaled by g (d): one workgroup per row, reducing the sum of
 /// squares in workgroup memory.
 const RMS_NORM: &str = r#"
@@ -146,17 +391,18 @@ fn main(@builtin(global_invocation_id) g: vec3<u32>) {
 }
 "#;
 
-/// Rotary position embedding in place on x (n × heads × hd), rotate-half form, from cos/sin tables
-/// (positions × hd/2) built on the host exactly as candle builds them.
+/// Rotary position embedding in place on x (n × heads × hd), rotate-half form over each head's first
+/// `rot` dims (the rest untouched), from cos/sin tables (positions × rot/2) built on the host exactly
+/// as candle builds them.
 const ROPE: &str = r#"
-struct P { heads: u32, hd: u32, n: u32, pos: u32 };
+struct P { heads: u32, hd: u32, n: u32, pos: u32, rot: u32, pad0: u32, pad1: u32, pad2: u32 };
 @group(0) @binding(0) var<storage, read_write> x: array<f32>;
 @group(0) @binding(1) var<storage, read> cos_t: array<f32>;
 @group(0) @binding(2) var<storage, read> sin_t: array<f32>;
 @group(0) @binding(3) var<uniform> p: P;
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) g: vec3<u32>) {
-    let half = p.hd / 2u;
+    let half = p.rot / 2u;
     let idx = g.x;
     if (idx >= p.n * p.heads * half) { return; }
     let j = idx % half;
@@ -320,6 +566,15 @@ impl Gpu {
             Kernel { pipeline, layout }
         };
         let matmul = pipeline("matmul", MATMUL);
+        let matmul_h = pipeline("matmul_h", MATMUL_H);
+        let embed_h = pipeline("embed_h", EMBED_H);
+        let split_halves = pipeline("split_halves", SPLIT_HALVES);
+        let mul_sigmoid = pipeline("mul_sigmoid", MUL_SIGMOID);
+        let l2norm_heads = pipeline("l2norm_heads", L2NORM_HEADS);
+        let gdn_gates = pipeline("gdn_gates", GDN_GATES);
+        let conv_silu = pipeline("conv_silu", CONV_SILU);
+        let mul_cols = pipeline("mul_cols", MUL_COLS);
+        let delta = pipeline("delta", DELTA);
         let rms_norm = pipeline("rms_norm", RMS_NORM);
         let embed = pipeline("embed", EMBED);
         let rope = pipeline("rope", ROPE);
@@ -357,6 +612,15 @@ impl Gpu {
             uniforms,
             slot: std::cell::Cell::new(0),
             matmul,
+            matmul_h,
+            embed_h,
+            split_halves,
+            mul_sigmoid,
+            l2norm_heads,
+            gdn_gates,
+            conv_silu,
+            mul_cols,
+            delta,
             rms_norm,
             embed,
             rope,
@@ -374,7 +638,7 @@ impl Gpu {
             contents: bytemuck::cast_slice(ids),
             usage: wgpu::BufferUsages::STORAGE,
         });
-        GpuTensor { shape: vec![ids.len()], buffer }
+        GpuTensor { shape: vec![ids.len()], half: false, buffer }
     }
 
     /// A zeroed tensor of `shape`.
@@ -384,6 +648,7 @@ impl Gpu {
 
     /// Copy all of `src` into `dst` starting at element `at`.
     pub fn copy_into(&self, src: &GpuTensor, dst: &GpuTensor, at: usize) {
+        assert!(!src.half && !dst.half, "copy_into works on f32 tensors");
         assert!(at + src.len() <= dst.len(), "copy of {} into {} at {at}", src.len(), dst.len());
         self.record(|e| e.copy_buffer_to_buffer(&src.buffer, 0, &dst.buffer, (at * 4) as u64, (src.len() * 4) as u64));
         self.held.borrow_mut().extend([src.buffer.clone(), dst.buffer.clone()]);
@@ -409,7 +674,40 @@ impl Gpu {
             contents: bytemuck::cast_slice(values),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         });
-        GpuTensor { shape: shape.to_vec(), buffer }
+        GpuTensor { shape: shape.to_vec(), half: false, buffer }
+    }
+
+    /// An f16 tensor of `shape`, its values still to be written (`write`): `bytes` is its packed size.
+    pub fn empty_half(&self, shape: &[usize]) -> GpuTensor {
+        let n: usize = shape.iter().product();
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (n * 2).next_multiple_of(4).max(4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        GpuTensor { shape: shape.to_vec(), half: true, buffer }
+    }
+
+    /// f32 values stored as f16, two to a u32: a weight `matmul` and `embed` read at half the size.
+    pub fn upload_half(&self, values: &[f32], shape: &[usize]) -> GpuTensor {
+        assert_eq!(values.len(), shape.iter().product::<usize>(), "{} values for shape {shape:?}", values.len());
+        let t = self.empty_half(shape);
+        let mut bytes: Vec<u8> = values.iter().flat_map(|&v| half::f16::from_f32(v).to_le_bytes()).collect();
+        bytes.resize(bytes.len().next_multiple_of(4), 0);
+        self.write(&t, 0, &bytes);
+        t
+    }
+
+    /// Raw little-endian bytes into `t` at byte `offset` (both multiples of 4): a streamed weight.
+    pub fn write(&self, t: &GpuTensor, offset: u64, bytes: &[u8]) {
+        self.queue.write_buffer(&t.buffer, offset, bytes);
+    }
+
+    /// Every value of `t` set to zero.
+    pub fn clear(&self, t: &GpuTensor) {
+        self.record(|e| e.clear_buffer(&t.buffer, 0, None));
+        self.held.borrow_mut().push(t.buffer.clone());
     }
 
     fn empty(&self, shape: &[usize]) -> GpuTensor {
@@ -420,7 +718,7 @@ impl Gpu {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        GpuTensor { shape: shape.to_vec(), buffer }
+        GpuTensor { shape: shape.to_vec(), half: false, buffer }
     }
 
     /// The values of `t`, read back from the GPU.
@@ -498,9 +796,11 @@ impl Gpu {
         let n = w.shape[0];
         assert_eq!(w.shape[1], k, "matmul: x is {:?}, W is {:?}", x.shape, w.shape);
         assert!(from + m <= x.shape[0], "matmul: rows {from}..{} of {:?}", from + m, x.shape);
+        assert!(!w.half || k.is_multiple_of(2), "matmul: an f16 weight's rows must hold an even count, not {k}");
         let y = self.empty(&[m, n]);
         let groups = (n.div_ceil(16) as u32, m.div_ceil(16) as u32);
-        self.run(&self.matmul, &[&x.buffer, &w.buffer, &y.buffer], &[m as u32, n as u32, k as u32, from as u32], groups);
+        let kernel = if w.half { &self.matmul_h } else { &self.matmul };
+        self.run(kernel, &[&x.buffer, &w.buffer, &y.buffer], &[m as u32, n as u32, k as u32, from as u32], groups);
         y
     }
 
@@ -508,16 +808,98 @@ impl Gpu {
     pub fn embed(&self, ids: &GpuTensor, table: &GpuTensor) -> GpuTensor {
         let (n, h) = (ids.len(), table.shape[1]);
         let y = self.empty(&[n, h]);
-        self.run(&self.embed, &[&ids.buffer, &table.buffer, &y.buffer], &[h as u32, n as u32, 0, 0], ((n * h).div_ceil(256) as u32, 1));
+        let kernel = if table.half { &self.embed_h } else { &self.embed };
+        self.run(kernel, &[&ids.buffer, &table.buffer, &y.buffer], &[h as u32, n as u32, 0, 0], ((n * h).div_ceil(256) as u32, 1));
         y
     }
 
     /// Rotary embedding in place on x (n × heads·hd) for positions pos..pos+n.
     pub fn rope(&self, x: &GpuTensor, heads: usize, cos: &GpuTensor, sin: &GpuTensor, pos: usize) {
+        self.rope_part(x, heads, x.shape[1] / heads, cos, sin, pos);
+    }
+
+    /// Rotary embedding in place on the first `rot` dims of each head of x (n × heads·hd), for
+    /// positions pos..pos+n, from tables of positions × rot/2.
+    pub fn rope_part(&self, x: &GpuTensor, heads: usize, rot: usize, cos: &GpuTensor, sin: &GpuTensor, pos: usize) {
         let n = x.shape[0];
         let hd = x.shape[1] / heads;
-        let work = n * heads * hd / 2;
-        self.run(&self.rope, &[&x.buffer, &cos.buffer, &sin.buffer], &[heads as u32, hd as u32, n as u32, pos as u32], (work.div_ceil(256) as u32, 1));
+        assert!(rot <= hd && rot.is_multiple_of(2), "rope: {rot} rotated dims of a {hd}-wide head");
+        let work = n * heads * rot / 2;
+        let p = [heads as u32, hd as u32, n as u32, pos as u32, rot as u32, 0, 0, 0];
+        self.run(&self.rope, &[&x.buffer, &cos.buffer, &sin.buffer], &p, (work.div_ceil(256) as u32, 1));
+    }
+
+    /// Each head's halves of x (n × heads·2hd) apart, as two tensors of n × heads·hd.
+    pub fn split_halves(&self, x: &GpuTensor, heads: usize) -> (GpuTensor, GpuTensor) {
+        let n = x.shape[0];
+        let hd = x.shape[1] / heads / 2;
+        let (a, b) = (self.empty(&[n, heads * hd]), self.empty(&[n, heads * hd]));
+        let work = n * heads * hd;
+        self.run(&self.split_halves, &[&x.buffer, &a.buffer, &b.buffer], &[n as u32, heads as u32, hd as u32, 0], (work.div_ceil(256) as u32, 1));
+        (a, b)
+    }
+
+    /// x ← x · σ(g), in place.
+    pub fn mul_sigmoid(&self, x: &GpuTensor, g: &GpuTensor) {
+        assert_eq!(x.len(), g.len(), "mul_sigmoid: {:?} and {:?}", x.shape, g.shape);
+        self.run(&self.mul_sigmoid, &[&x.buffer, &g.buffer], &[x.len() as u32, 0, 0, 0], (x.len().div_ceil(256) as u32, 1));
+    }
+
+    /// L2-normalise, in place, the first `heads` heads of width `d` in each row of x (n × width), the
+    /// first `scaled` of them then multiplied by `scale`.
+    pub fn l2norm_heads(&self, x: &GpuTensor, heads: usize, d: usize, scaled: usize, scale: f32) {
+        let (n, width) = (x.shape[0], x.shape[1]);
+        assert!(heads * d <= width, "l2norm: {heads} heads of {d} in rows of {width}");
+        self.run(&self.l2norm_heads, &[&x.buffer], &[width as u32, d as u32, scaled as u32, scale.to_bits()], (n as u32, heads as u32));
+    }
+
+    /// Gated DeltaNet's gates in place over (n × heads): a becomes the decay, b becomes beta.
+    pub fn gdn_gates(&self, a: &GpuTensor, b: &GpuTensor, neg_a: &GpuTensor, dt_bias: &GpuTensor) {
+        let heads = neg_a.len();
+        assert!(a.len() == b.len() && a.len().is_multiple_of(heads) && dt_bias.len() == heads, "gdn_gates: {:?}, {:?} over {heads} heads", a.shape, b.shape);
+        self.run(&self.gdn_gates, &[&a.buffer, &b.buffer, &neg_a.buffer, &dt_bias.buffer], &[a.len() as u32, heads as u32, 0, 0], (a.len().div_ceil(256) as u32, 1));
+    }
+
+    /// The causal depthwise conv and SiLU over raw (n × ch) after `state` (k − 1 × ch), whose rows
+    /// become the last k − 1 of the input: weights `w` are ch × k.
+    pub fn conv_silu(&self, raw: &GpuTensor, w: &GpuTensor, state: &GpuTensor) -> GpuTensor {
+        self.conv(raw, w, state, true)
+    }
+
+    /// The causal depthwise conv over raw (n × ch) after `state` (k − 1 × ch), whose rows become the
+    /// last k − 1 of the input, then SiLU if `silu`: weights `w` are ch × k.
+    pub fn conv(&self, raw: &GpuTensor, w: &GpuTensor, state: &GpuTensor, silu: bool) -> GpuTensor {
+        let (n, ch, k) = (raw.shape[0], raw.shape[1], w.shape[1]);
+        assert!(w.shape[0] == ch && state.len() == (k - 1) * ch, "conv: raw {:?}, weights {:?}, state {:?}", raw.shape, w.shape, state.shape);
+        let (out, next) = (self.empty(&[n, ch]), self.empty(&state.shape));
+        let work = n.max(k - 1) * ch;
+        self.run(&self.conv_silu, &[&raw.buffer, &w.buffer, &state.buffer, &out.buffer, &next.buffer], &[n as u32, ch as u32, k as u32, u32::from(silu)], (work.div_ceil(256) as u32, 1));
+        self.copy_into(&next, state, 0);
+        out
+    }
+
+    /// y (n × w) = a[:, oa..oa + w] · b[:, ob..ob + w], elementwise: column ranges of two matrices of
+    /// n rows (which may be the same matrix).
+    pub fn mul_cols(&self, a: &GpuTensor, oa: usize, b: &GpuTensor, ob: usize, w: usize) -> GpuTensor {
+        let (n, wa, wb) = (a.shape[0], a.shape[1], b.shape[1]);
+        assert!(b.shape[0] == n && oa + w <= wa && ob + w <= wb, "mul_cols: {w} columns at {oa} of {:?} and at {ob} of {:?}", a.shape, b.shape);
+        let y = self.empty(&[n, w]);
+        let p = [n as u32, w as u32, wa as u32, oa as u32, wb as u32, ob as u32, 0, 0];
+        self.run(&self.mul_cols, &[&a.buffer, &b.buffer, &y.buffer], &p, ((n * w).div_ceil(256) as u32, 1));
+        y
+    }
+
+    /// The gated delta rule over n tokens from `state` (vh × dk × dv), updated in place: q, k and v
+    /// from the conv's output rows (n × ch), the decay and beta (n × vh). The outputs, n × vh·dv.
+    #[allow(clippy::too_many_arguments)]
+    pub fn delta(&self, mixed: &GpuTensor, decay: &GpuTensor, beta: &GpuTensor, state: &GpuTensor, kk: usize, vh: usize, dk: usize, dv: usize) -> GpuTensor {
+        let (n, ch) = (mixed.shape[0], mixed.shape[1]);
+        assert!(dk <= 128 && dv <= 128 && vh.is_multiple_of(kk), "delta: heads {kk} → {vh}, widths {dk} × {dv}");
+        assert!(ch >= 2 * kk * dk + vh * dv && state.len() == vh * dk * dv, "delta: rows of {ch}, state {:?}", state.shape);
+        let o = self.empty(&[n, vh * dv]);
+        let p = [n as u32, kk as u32, vh as u32, dk as u32, dv as u32, ch as u32, 0, 0];
+        self.run(&self.delta, &[&mixed.buffer, &decay.buffer, &beta.buffer, &state.buffer, &o.buffer], &p, (vh as u32, 1));
+        o
     }
 
     /// Causal attention of q (n × heads·hd, at positions pos..pos+n) over the caches' first pos+n rows.
@@ -568,4 +950,69 @@ impl Gpu {
         self.run(&self.rms_norm, &[&x.buffer, &g.buffer, &y.buffer], &[d as u32, eps.to_bits(), 0, 0], (m as u32, 1));
         y
     }
+}
+
+/// A model's weights as a stream left them: the big ones already on the GPU, the small ones as host
+/// values for the decoder to adjust (a norm's 1 + w, a decay's −exp) before it uploads them.
+#[derive(Default)]
+pub struct Weights {
+    gpu: std::collections::HashMap<String, GpuTensor>,
+    host: std::collections::HashMap<String, (Vec<usize>, Vec<f32>)>,
+}
+
+impl Weights {
+    /// A weight already on the GPU, by its name in the file.
+    pub fn take(&mut self, name: &str) -> Result<GpuTensor, String> {
+        self.gpu.remove(name).ok_or_else(|| format!("the weights have no {name}"))
+    }
+
+    /// A small weight's shape and values, by its name in the file.
+    pub fn host(&mut self, name: &str) -> Result<(Vec<usize>, Vec<f32>), String> {
+        self.host.remove(name).ok_or_else(|| format!("the weights have no {name}"))
+    }
+
+    pub fn has(&self, name: &str) -> bool {
+        self.gpu.contains_key(name) || self.host.contains_key(name)
+    }
+}
+
+/// Which tensors of a file a decoder keeps, and as what.
+pub type Rule = fn(&str, &[usize]) -> Option<stream::Store>;
+
+/// The `stream::Sink` that puts a file's tensors on the GPU as they arrive.
+pub struct Upload<'a> {
+    pub gpu: &'a Gpu,
+    pub weights: &'a mut Weights,
+    pub rule: Rule,
+}
+
+impl stream::Sink for Upload<'_> {
+    fn store(&self, name: &str, shape: &[usize]) -> Option<stream::Store> {
+        (self.rule)(name, shape)
+    }
+
+    fn begin(&mut self, name: &str, store: stream::Store, shape: &[usize], _bytes: u64) {
+        let t = match store {
+            stream::Store::Half => self.gpu.empty_half(shape),
+            _ => self.gpu.empty(shape),
+        };
+        self.weights.gpu.insert(name.to_string(), t);
+    }
+
+    fn write(&mut self, name: &str, offset: u64, bytes: &[u8]) {
+        if let Some(t) = self.weights.gpu.get(name) {
+            self.gpu.write(t, offset, bytes);
+        }
+    }
+
+    fn small(&mut self, name: &str, shape: &[usize], values: Vec<f32>) {
+        self.weights.host.insert(name.to_string(), (shape.to_vec(), values));
+    }
+}
+
+/// Every tensor of a whole file in memory, through the same stream a browser feeds piece by piece.
+pub fn upload_file(gpu: &Gpu, bytes: &[u8], rule: Rule, weights: &mut Weights) -> Result<(), String> {
+    let mut s = stream::Stream::new();
+    s.feed(bytes, &mut Upload { gpu, weights, rule })?;
+    s.finish()
 }

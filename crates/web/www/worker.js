@@ -13,10 +13,18 @@
 // module was still awaiting its import would otherwise be dispatched to no handler, and lost.
 const BACKEND = new URL(self.location.href).searchParams.get('backend') === 'webgpu' ? 'webgpu' : 'cpu';
 let Session, summarize, first_arm, prompt_hash, wasm;
+// An engine that does not arrive (its script or its wasm) is said in the page's words, so the page
+// shows one sentence that names the download; the browser's own reason goes to the console.
+const ENGINE_MISSING = 'The engine did not download. Check your connection and reload the page.';
 const ready = (async () => {
-  const pkg = await import(BACKEND === 'webgpu' ? './pkg-webgpu/prattle_webgpu.js' : './pkg/prattle_web.js');
-  ({ Session, summarize, first_arm, prompt_hash } = pkg);
-  wasm = await pkg.default();
+  try {
+    const pkg = await import(BACKEND === 'webgpu' ? './pkg-webgpu/prattle_webgpu.js' : './pkg/prattle_web.js');
+    ({ Session, summarize, first_arm, prompt_hash } = pkg);
+    wasm = await pkg.default();
+  } catch (e) {
+    console.error('prattle engine:', e);
+    throw new Error(ENGINE_MISSING);
+  }
 })();
 
 const CACHE = 'prattle-weights-v1';
@@ -73,6 +81,64 @@ async function fetchBytes(url, label, progress) {
   return { bytes, from };
 }
 
+// The bytes of `url` handed to `feed` as they arrive — never held whole, so a weight file larger than
+// the engine's 4 GiB of wasm memory still loads — kept in Cache Storage as fetchBytes keeps a file.
+async function streamFile(url, label, progress, feed) {
+  const keep = keepable(url);
+  const cache = keep ? await openCache() : null;
+  const hit = cache ? await cache.match(url) : undefined;
+  let from = hit ? 'cache' : keep ? 'network' : 'local';
+  let response = hit, stored = null;
+  if (!response) {
+    response = await fetch(url);
+    if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+  }
+  const total = +response.headers.get('content-length') || 0;
+  let body = response.body;
+  if (cache && !hit) {
+    const [mine, theirs] = body.tee();
+    body = mine;
+    const headers = { 'content-type': 'application/octet-stream', ...(total ? { 'content-length': String(total) } : {}) };
+    stored = cache.put(url, new Response(theirs, { headers }));
+  }
+  const reader = body.getReader();
+  let loaded = 0, last = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    feed(value);
+    loaded += value.length;
+    if (loaded - last > 4 << 20) { last = loaded; progress({ label, loaded, total, from }); }
+  }
+  if (stored) {
+    try { await stored; } catch (e) { from = `network, not kept: ${e?.name ?? e}`; }
+  }
+  progress({ label, loaded, total: total || loaded, from });
+  return from;
+}
+
+// A checkpoint's weight files: the shards its index names, in order, or the one model.safetensors.
+async function weightFiles(base, label, progress) {
+  try {
+    const index = await fetchBytes(base + 'model.safetensors.index.json', `${label} index`, progress);
+    return [...new Set(Object.values(JSON.parse(new TextDecoder().decode(index.bytes)).weight_map))].sort();
+  } catch {
+    return ['model.safetensors'];
+  }
+}
+
+// Every weight file of a checkpoint streamed into the session's model that is loading.
+async function streamWeights(base, label, progress) {
+  const files = await weightFiles(base, label, progress);
+  let from = null;
+  for (const [i, file] of files.entries()) {
+    if (i > 0) session.next_file();
+    const name = files.length > 1 ? `${label} (${i + 1} of ${files.length})` : label;
+    from ??= await streamFile(base + file, name, progress, chunk => session.feed(chunk));
+  }
+  return from;
+}
+
 // A control arm runs to completion, capped.
 const CONTROL_TOKENS = 32;
 // A timed run stops at the first visible text.
@@ -83,6 +149,12 @@ const ops = {
     const progress = p => post({ progress: p });
     const config = await fetchBytes(base + 'config.json', `${label} config`, progress);
     const tokenizer = await fetchBytes(base + 'tokenizer.json', `${label} tokenizer`, progress);
+    if (Session.open) {
+      session = await Session.open(config.bytes, tokenizer.bytes);
+      const from = await streamWeights(base, label, progress);
+      session.finish_source();
+      return { [label]: from };
+    }
     const weights = await fetchBytes(base + 'model.safetensors', label, progress);
     session = await Session.from_bytes(config.bytes, tokenizer.bytes, weights.bytes);
     return { [label]: weights.from };
@@ -91,6 +163,13 @@ const ops = {
   async attach({ base, label, bridge }, post) {
     const progress = p => post({ progress: p });
     const config = await fetchBytes(base + 'config.json', `${label} config`, progress);
+    if (session.begin_target) {
+      session.begin_target(config.bytes);
+      const from = await streamWeights(base, label, progress);
+      const map = await fetchBytes(bridge, 'the bridge', progress);
+      session.finish_target(map.bytes);
+      return { [label]: from, bridge: map.from };
+    }
     const weights = await fetchBytes(base + 'model.safetensors', label, progress);
     const map = await fetchBytes(bridge, 'the bridge', progress);
     session.attach_target_bytes(config.bytes, weights.bytes, map.bytes);
@@ -165,9 +244,16 @@ const ops = {
 };
 
 // A Rust panic arrives as an uncaught "unreachable"; the engine's panic hook left the real message.
-self.addEventListener('error', e => {
-  const where = (e.error?.stack || '').split('\n').slice(0, 12).join(' ← ');
-  self.postMessage({ panic: self.prattlePanic || `${e.message}${where ? ` at ${where}` : ''}` });
+// The worker's report is the only one: preventDefault keeps the bare "unreachable" from also reaching
+// the page's worker.onerror, which could arrive first and stand in for the panic's own words.
+function reportPanic(message, error) {
+  const where = (error?.stack || '').split('\n').slice(0, 12).join(' ← ');
+  self.postMessage({ panic: self.prattlePanic || `${message}${where ? ` at ${where}` : ''}` });
+}
+self.addEventListener('error', e => { e.preventDefault(); reportPanic(e.message, e.error); });
+self.addEventListener('unhandledrejection', e => {
+  e.preventDefault();
+  reportPanic(`Uncaught (in promise) ${e.reason?.message ?? e.reason}`, e.reason);
 });
 
 // One op at a time, in arrival order: the WebGPU engine's steps are promises, and an op that began
@@ -181,6 +267,9 @@ self.onmessage = ({ data: { id, op, args } }) => {
       if (!ops[op]) throw new Error(`no op called ${op}`);
       post({ ok: await ops[op](args || {}, post) });
     } catch (e) {
+      // A trap inside an op (a GPU read that dies with the device) leaves the module unusable: it is
+      // reported as a panic, so the page recovers or says to reload, never as one op's error.
+      if (e instanceof WebAssembly.RuntimeError || self.prattlePanic) return reportPanic(String(e?.message ?? e), e);
       post({ err: String(e?.message ?? e) });
     }
   });

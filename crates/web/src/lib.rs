@@ -16,11 +16,10 @@ impl Session {
     }
 
     /// A session from ONE FAST_LLM file (`prattle_core::fast_llm`): the reading model, the answering
-    /// model and their bridge, attached as `attach_target_bytes` would. The file's bytes are let go as
-    /// soon as they are split, so the page's 4 GiB holds one copy of the weights while the models build.
+    /// model and their bridge, attached as `attach_target_bytes` would. Both models are read in place
+    /// from the file's own bytes, so the page's 4 GiB holds one copy of the weights while the models build.
     pub fn from_fast_llm(bytes: Vec<u8>) -> Result<Session, JsError> {
-        let parts = prattle_core::fast_llm::FastLlm::unpack(&bytes).map_err(|e| JsError::new(&e))?;
-        drop(bytes);
+        let parts = prattle_core::fast_llm::FastLlm::unpack(bytes).map_err(|e| JsError::new(&e))?;
         let (cpu, f32) = (candle_core::Device::Cpu, candle_core::DType::F32);
         Model::from_fast_llm_parts(parts, cpu.clone(), cpu, f32, f32, None).map(Session).map_err(|e| JsError::new(&e))
     }

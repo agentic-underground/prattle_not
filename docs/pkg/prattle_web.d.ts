@@ -17,8 +17,8 @@ export class Session {
   has_target(): boolean;
   /**
    * A session from ONE FAST_LLM file (`prattle_core::fast_llm`): the reading model, the answering
-   * model and their bridge, attached as `attach_target_bytes` would. The file's bytes are let go as
-   * soon as they are split, so the page's 4 GiB holds one copy of the weights while the models build.
+   * model and their bridge, attached as `attach_target_bytes` would. Both models are read in place
+   * from the file's own bytes, so the page's 4 GiB holds one copy of the weights while the models build.
    */
   static from_fast_llm(bytes: Uint8Array): Session;
   prompt_tokens(question: string): number;

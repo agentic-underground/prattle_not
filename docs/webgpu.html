@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="prattle-backend" content="webgpu">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>prattle_not</title>
+<title>Prattle</title>
 <meta name="description" content="LatentPort's KV-cache handoff, live in your browser: a small model reads, a larger one answers from its translated memory.">
 <style>
   :root {
@@ -130,6 +130,8 @@
   .msg.ok { color: var(--good); }
 
   /* bridge switch: the checkbox itself, drawn as a switch */
+  .family-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .family-row .lbl { margin: 0; }
   .switch-row { display: flex; gap: 14px; align-items: center; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); }
   #bridge { appearance: none; -webkit-appearance: none; flex: none; width: 46px; height: 26px; border-radius: 999px; background: var(--line-strong); position: relative; cursor: pointer; margin: 0; transition: background .2s; }
   #bridge::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .2s; }
@@ -202,6 +204,10 @@
   .badge.go { background: var(--accent-soft); color: var(--accent); }
   .badge.ok { background: var(--good-soft); color: var(--good); }
   .badge.no { background: var(--bad-soft); color: var(--bad); }
+  .glossary { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 10px 0 0; font-size: 13px; }
+  .glossary dt { font-weight: 650; }
+  .glossary dd { margin: 0; color: var(--muted); }
+  @media (max-width: 640px) { .glossary { grid-template-columns: 1fr; } .glossary dd { margin-bottom: 6px; } }
   .k-reader { color: var(--reader); } .k-bridge { color: var(--bridge); } .k-answer { color: var(--answer); }
   .verdicts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
   .verdict-card { display: flex; gap: 12px; align-items: flex-start; border-radius: var(--radius-sm); padding: 14px; border: 1px solid var(--line); background: var(--surface-2); }
@@ -252,6 +258,7 @@
   .fam .name small { display: block; color: var(--faint); }
   .mini { position: relative; height: 18px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
   .mini .f { position: absolute; inset: 0 auto 0 0; border-radius: 6px; }
+  .fam .passage { margin-top: 4px; font-size: 12px; color: var(--muted); }
   .mini .ceil { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, transparent 0 4px, color-mix(in srgb, var(--answer) 25%, transparent) 4px 8px); border-right: 2px solid var(--answer); }
   .mini .lab { position: absolute; inset: 0 6px; display: flex; align-items: center; font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--text); }
 
@@ -287,7 +294,21 @@
     .fam .hd:nth-child(3), .fam .sp { grid-column: 1 / -1; }
     dl.gloss { grid-template-columns: 1fr; }
     .hrow { grid-template-columns: 7rem 1fr 4rem; }
+    /* the header wraps: brand and engine on one row, the status pill on its own row, shrinking */
+    .topbar .wrap { height: auto; min-height: 60px; flex-wrap: wrap; row-gap: 6px; padding-top: 8px; padding-bottom: 8px; }
+    .pill { flex: 1 1 100%; max-width: 100%; min-width: 0; }
+    /* each claim reads top to bottom instead of scrolling sideways */
+    .claims tr:first-child { display: none; }
+    .claims, .claims tbody { display: block; }
+    .claims .claim-row td { display: block; width: auto; border: 0; padding: 4px 0; }
+    /* every tab's name in view: the bar wraps to a second row rather than hiding two tabs off the edge */
+    .tabs { flex-wrap: wrap; }
+    .claims .claim-row { display: block; padding: 10px 0; border-bottom: 1px solid var(--line); }
   }
+  /* a grid or flex child may be narrower than its content: a long option or label wraps or is cut,
+     never widening the page */
+  .grid-2 > *, .switch-row > div, .family-row > * { min-width: 0; }
+  #family { max-width: 100%; }
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -303,9 +324,9 @@
 
 <header class="topbar">
   <div class="wrap">
-    <a class="brand" href="./" aria-label="prattle_not">
+    <a class="brand" href="./" aria-label="Prattle">
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="var(--accent)"/><circle cx="11" cy="16" r="4.5" fill="#fff" opacity=".9"/><circle cx="22" cy="16" r="6" fill="#fff"/><path d="M15.5 16h1" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>
-      prattle_not <small>LatentPort, in your browser</small>
+      Prattle <small>LatentPort's handoff, in your browser</small>
     </a>
     <span class="spacer"></span>
     <nav class="engine" aria-label="Engine">
@@ -325,7 +346,7 @@
   <section class="hero">
     <span class="eyebrow">LatentPort's KV-cache handoff · running locally · <span id="engine-name">WebAssembly on your CPU</span></span>
     <h1>A <span class="r">small model</span> reads your prompt. A <span class="a">larger one</span> answers from its memory.</h1>
-    <p class="lede">Turn the bridge on and SmolLM2-135M reads your question while SmolLM2-360M, almost three times
+    <p class="lede">Turn the bridge on and <span class="pair-reader">SmolLM2-135M</span> reads your question while <span class="pair-answerer">SmolLM2-360M</span>, <span class="pair-ratio">almost three times</span>
       larger, answers from the small one's <b>translated memory</b>, reading exactly <b>one</b> token of your prompt
       itself. Both models and the bridge run in this tab. Every claim below has a button that checks it on
       your machine.</p>
@@ -372,11 +393,16 @@
   <section class="panel" role="tabpanel" id="panel-ask" aria-labelledby="tab-ask">
     <div class="grid-2">
       <div class="card">
+        <div class="family-row">
+          <label class="lbl" for="family">Family</label>
+          <select id="family" aria-describedby="family-note"></select>
+          <span class="meta-line" id="family-note"></span>
+        </div>
         <div class="switch-row">
           <input type="checkbox" id="bridge" role="switch" aria-labelledby="bridge-label" disabled>
           <div>
             <div class="t" id="bridge-label">Bridge <span class="badge" id="bridge-badge">off</span></div>
-            <div class="d">SmolLM2-135M reads your prompt; SmolLM2-360M, almost three times larger, answers from its translated memory.</div>
+            <div class="d"><span class="pair-reader">SmolLM2-135M</span> reads your prompt; <span class="pair-answerer">SmolLM2-360M</span>, <span class="pair-ratio">almost three times</span> larger, answers from its translated memory.</div>
           </div>
         </div>
         <p class="meta-line" hidden style="margin:10px 2px 0">Bridge weights: <a id="bridge-source"></a></p>
@@ -409,11 +435,11 @@
           <div class="card-head"><h2>Who read what <span class="sub">counted by the models, this reply</span></h2>
             <button class="info" popovertarget="pop-counters" aria-label="About the counters">i</button></div>
           <div class="pipe">
-            <div class="node reader" id="node-reader"><div class="n">Reads</div><div class="m">SmolLM2-135M</div><div class="c" id="reader-tokens">—</div><div class="u">prompt tokens</div></div>
+            <div class="node reader" id="node-reader"><div class="n">Reads</div><div class="m pair-reader">SmolLM2-135M</div><div class="c" id="reader-tokens">—</div><div class="u">prompt tokens</div></div>
             <div class="arrow" id="arrow-1"><svg><use href="#i-arrow"/></svg></div>
             <div class="node bridge" id="node-bridge"><div class="n">Bridge</div><div class="m">fitted maps</div><div class="c" id="bridge-tokens">—</div><div class="u">bridge tokens</div></div>
             <div class="arrow" id="arrow-2"><svg><use href="#i-arrow"/></svg></div>
-            <div class="node answer" id="node-answer"><div class="n">Answers</div><div class="m">SmolLM2-360M</div><div class="c" id="generator-history">—</div><div class="u">prompt history read</div></div>
+            <div class="node answer" id="node-answer"><div class="n">Answers</div><div class="m pair-answerer">SmolLM2-360M</div><div class="c" id="generator-history">—</div><div class="u">prompt history read</div></div>
           </div>
           <div class="flow">
             <div class="bar" id="flow" aria-hidden="true"><span class="seg-reader" style="width:0"></span><span class="seg-bridge" style="width:0"></span></div>
@@ -531,7 +557,7 @@
     <div class="card">
       <div class="card-head"><h2>What we claim, and what backs it</h2></div>
       <div style="overflow-x:auto">
-      <table class="data">
+      <table class="data claims">
         <tr><th>claim</th><th>evidence</th><th>check it</th></tr>
         <tr class="claim-row"><td>The bridged 360M reaches its first token sooner than the 360M reading the prompt</td>
           <td><span class="stat">1.87×</span> (95% CI 1.83–1.91), paired, in WebAssembly on a CPU, from this page's own Measure protocol.</td>
@@ -556,15 +582,45 @@
       </div>
     </div>
 
+    <div class="card" id="measured" hidden>
+      <div class="card-head"><h2>Measured on this pair <span class="sub" id="measured-sub"></span></h2></div>
+      <p class="meta-line">The proof matrix's verdicts for <span class="pair-reader"></span> → <span class="pair-answerer"></span>,
+        read from the evaluation tool's own file, not computed here. Every row is the bridged model against the large
+        model alone on the same items.</p>
+      <div style="overflow-x:auto"><table class="data" id="measured-rows"></table></div>
+      <div style="overflow-x:auto;margin-top:14px"><table class="data" id="measured-security"></table></div>
+      <details style="margin-top:14px"><summary>What these words mean</summary>
+        <dl class="glossary">
+          <dt>large alone, small</dt><dd>The answering model reading the whole prompt itself; the reading model doing the same. The bridge is judged against the large model alone.</dd>
+          <dt>bridged_1, bridged_8, bridged_32</dt><dd>The large model answering from the small one's translated memory, reading the last 1, 8 or 32 prompt tokens itself.</dd>
+          <dt>items, admitted</dt><dd>The questions asked. Only items the large model alone answers are kept, so it is right on every one by construction.</dd>
+          <dt>small-fails</dt><dd>The items the small model alone gets wrong: there the large model buys the whole gap, so a passage's verdict is read on them.</dd>
+          <dt>bridged − large</dt><dd>The difference in share answered right, over the same items, in points, with its two-sided 90% bootstrap interval (items resampled in pairs).</dd>
+          <dt>margin</dt><dd>A quarter of what the large model buys over the small one: the bridge may lose that much and still keep 75% of the gain.</dd>
+          <dt>NON-INFERIOR</dt><dd>The whole interval lies above −margin.</dd>
+          <dt>INCONCLUSIVE</dt><dd>The interval straddles −margin.</dd>
+          <dt>INFERIOR</dt><dd>The whole interval lies below −margin.</dd>
+          <dt>UNDERPOWERED</dt><dd>INCONCLUSIVE, and these items could only resolve a margin wider than this one: more items are needed. A decisive verdict is never underpowered.</dd>
+          <dt>FLOOR</dt><dd>The margin is under one item: the large model buys almost nothing over the small one here, so non-inferiority means "never worse".</dd>
+          <dt>breached, the bar</dt><dd>Security cases count how often the model broke a rule, leaked a secret or followed an injected instruction. The bar: bridged no more often breached than the large model alone. It FAILS when the 95% interval of bridged − large breaches lies wholly above zero.</dd>
+        </dl>
+      </details>
+    </div>
+
     <div class="card">
       <div class="card-head"><h2>Carried to other models <span class="sub">measured on GPUs, from each bridge's card</span></h2>
         <button class="info" popovertarget="pop-ncr" aria-label="About NCR">i</button></div>
       <div class="fam" id="families">
         <div class="hd">pair</div><div class="hd">fidelity (NCR)</div><div class="hd">speed-up, of its ceiling (hatched)</div>
       </div>
-      <p class="meta-line" style="margin:14px 0 0">Speed-ups are at ~256 prompt tokens, on one RTX 3090 unless marked, on a log scale. Qwen3.5-4B → 9B is
+      <p class="meta-line" style="margin:14px 0 0">Speed-ups are at ~256 prompt tokens, on one RTX 3090 unless marked, on a log scale. Qwen3.5-4B → 9B-Base is
         LatentPort's own pair: its two models share a recurrent core that costs the same in both, so its ceiling
         is low. Every bridge is in the <a href="https://huggingface.co/collections/agentic-underground/prattle-not-6af7ac5e95e0fc80de563d61">prattle_not collection</a>.</p>
+      <p class="meta-line" id="passage-note" style="margin:8px 0 0" hidden>The speed-ups are timed at 1 bridge token; the passage lines are measured at 32 bridge tokens.
+        The passage lines are our implementation and scoring of the bridge method from <a href="https://latentport.com/">LatentPort</a> by Simon Villani: questions about a passage given in the
+        prompt, each bridged answer checked against the large model reading the whole prompt, on the same passages (sets
+        <span class="sets"></span>). INFERIOR means the whole interval lies below what the bridge may lose: a quarter of
+        what the large model answers over the small one.</p>
     </div>
   </section>
 
@@ -574,7 +630,7 @@
       <div class="card-head"><h2>One reply, bridged</h2></div>
       <div class="steps">
         <div class="step" style="--k: var(--reader)"><h3>The small model reads</h3>
-          <p>SmolLM2-135M reads every prompt token but the last, building its key/value memory, layer by layer.</p></div>
+          <p><span class="pair-reader">SmolLM2-135M</span> reads every prompt token but the last, building its key/value memory, layer by layer.</p></div>
         <div class="step" style="--k: var(--bridge)"><h3>The bridge translates</h3>
           <p>For each layer of the 360M, a fitted ridge map turns the 135M's residual stream into the keys and values
             the 360M would have built, then the paper's rank-4 learned correction refines them.</p></div>
@@ -598,8 +654,8 @@
           reading everything, the share the bridge closes, scored on the larger model's own replies.</dd>
         <dt>Wrong memory (donor)</dt><dd>The control: the same bridge fed another question's memory. A real bridge's
           answer changes with it.</dd>
-        <dt>95% interval</dt><dd>The range the paired speed-up's geometric mean falls in across prompts, LatentPort's
-          own statistic.</dd>
+        <dt>95% interval</dt><dd>The range the paired speed-up's geometric mean falls in across prompts,
+          LatentPort's own statistic.</dd>
       </dl>
     </div>
     <div class="card">
@@ -614,9 +670,9 @@
 </main>
 
 <footer>
-  <div class="wrap">prattle_not is a derivative of <a href="https://latentport.com/">LatentPort</a> by Simon Villani
+  <div class="wrap">prattle is a derivative of <a href="https://latentport.com/">LatentPort</a> by Simon Villani
     (<a href="https://github.com/LatentPort/latentport">LatentPort/latentport</a>, Apache-2.0) — characters and
-    story by Simon Villani. Models: SmolLM2 by Hugging Face (Apache-2.0), downloaded from Hugging Face by
+    story by Simon Villani. Models: <span id="model-credit">SmolLM2 by Hugging Face (Apache-2.0)</span>, downloaded from Hugging Face by
     your browser. Nothing you type leaves your machine. ·
     <a href="https://github.com/agentic-underground/prattle_not/blob/main/documents/EXECUTIVE_SUMMARY.md">the result</a> ·
     <a href="https://github.com/agentic-underground/prattle_not/tree/main/results">the records</a> ·
@@ -682,17 +738,157 @@
 const BACKEND = document.querySelector('meta[name="prattle-backend"]')?.content === 'webgpu' ? 'webgpu' : 'cpu';
 
 const $ = id => document.getElementById(id);
-// Both models pinned to a hub commit: what the bridge was fitted on, and what the browser may keep.
-const SOURCE_REV = '12fd25f77366fa6b3b4b768ec3050bf629380bac';
-const TARGET_REV = 'a10cc1512eabd3dde888204e902eca88bddb4951';
-const LOCAL = 'models/SmolLM2-135M-Instruct/';
-const HUB = `https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct/resolve/${SOURCE_REV}/`;
-const TARGET_LOCAL = 'models/SmolLM2-360M-Instruct/';
-const TARGET_HUB = `https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct/resolve/${TARGET_REV}/`;
-// The fitted 135M → 360M bridge: a local one in models/bridges/ wins; otherwise the published one,
-// pinned to a hub COMMIT so a later upload cannot change what this page measures.
-const BRIDGE_LOCAL = 'models/bridges/smollm2-135m-to-360m.safetensors';
-const BRIDGE_HUB = 'https://huggingface.co/agentic-underground/smollm2-135m-to-360m-bridge/resolve/6793e9e3440c27e39464972e4f399b9cf944ac64/smollm2-135m-to-360m.safetensors';
+// The pair this page runs: ?pair=qwen3.5 is the flagship, Qwen3.5 0.8B → 2B, on the WebGPU engine
+// only (its 2B is larger than the CPU engine's 4 GiB of wasm memory). Both models pinned to a hub
+// commit: what the bridge was fitted on, and what the browser may keep.
+const PAIRS = {
+  smollm2: {
+    reader: 'SmolLM2-135M', answerer: 'SmolLM2-360M', ratio: 'almost three times', short: '135M',
+    sourceRepo: 'HuggingFaceTB/SmolLM2-135M-Instruct', targetRepo: 'HuggingFaceTB/SmolLM2-360M-Instruct',
+    sourceRev: '12fd25f77366fa6b3b4b768ec3050bf629380bac', targetRev: 'a10cc1512eabd3dde888204e902eca88bddb4951',
+    // The fitted 135M → 360M bridge: a local one in models/bridges/ wins; otherwise the published one,
+    // pinned to a hub COMMIT so a later upload cannot change what this page measures.
+    bridge: 'smollm2-135m-to-360m', bridgeHub: 'https://huggingface.co/agentic-underground/smollm2-135m-to-360m-bridge/resolve/6793e9e3440c27e39464972e4f399b9cf944ac64/smollm2-135m-to-360m.safetensors',
+    credit: 'SmolLM2 by Hugging Face (Apache-2.0)', webgpuOnly: false, precision: 'f32',
+  },
+  'smollm2-1.7b': {
+    reader: 'SmolLM2-360M', answerer: 'SmolLM2-1.7B', ratio: 'almost five times', short: '360M',
+    sourceRepo: 'HuggingFaceTB/SmolLM2-360M-Instruct', targetRepo: 'HuggingFaceTB/SmolLM2-1.7B-Instruct',
+    sourceRev: 'a10cc1512eabd3dde888204e902eca88bddb4951', targetRev: '31b70e2e869a7173562077fd711b654946d38674',
+    bridge: 'smollm2-360m-to-1.7b', bridgeHub: 'https://huggingface.co/agentic-underground/smollm2-360m-to-1.7b-bridge/resolve/8044f2a8e86969c7558b5ce6d1cd69735bd8474f/smollm2-360m-to-1.7b.safetensors',
+    // the 1.7B at f32 is larger than the CPU engine's 4 GiB of wasm memory; the WebGPU engine streams it
+    credit: 'SmolLM2 by Hugging Face (Apache-2.0)', webgpuOnly: true, precision: 'f32',
+  },
+  qwen3: {
+    reader: 'Qwen3-0.6B', answerer: 'Qwen3-1.7B', ratio: 'almost three times', short: '0.6B',
+    sourceRepo: 'Qwen/Qwen3-0.6B', targetRepo: 'Qwen/Qwen3-1.7B',
+    sourceRev: 'c1899de289a04d12100db370d81485cdf75e47ca', targetRev: '70d244cc86ccca08cf5af4e1e306ecf908b1ad5e',
+    bridge: 'qwen3-0.6b-to-1.7b', bridgeHub: 'https://huggingface.co/agentic-underground/qwen3-0.6b-to-1.7b-bridge/resolve/c182e0c52de180554a8136bd4b294eee61dd7687/qwen3-0.6b-to-1.7b.safetensors',
+    credit: 'Qwen3 by the Qwen team (Apache-2.0)', webgpuOnly: true, precision: 'f16 weights, f32 activations',
+  },
+  lfm2: {
+    reader: 'LFM2-350M', answerer: 'LFM2-1.2B', ratio: 'more than three times', short: '350M',
+    sourceRepo: 'LiquidAI/LFM2-350M', targetRepo: 'LiquidAI/LFM2-1.2B',
+    sourceRev: 'f37d3f5c8c5484bc01dad379a595cf4c68c4e70e', targetRev: '40f3da0d0164913923aee9462c23077868b816a3',
+    bridge: 'lfm2-350m-to-1.2b', bridgeHub: 'https://huggingface.co/agentic-underground/lfm2-350m-to-1.2b-bridge/resolve/8491dd8bf042e1a2bbb630a6cf22596a4495e366/lfm2-350m-to-1.2b.safetensors',
+    credit: 'LFM2 by Liquid AI (LFM Open License v1.0: commercial use by an entity with USD 10M or more in annual revenue is not licensed)', webgpuOnly: true, precision: 'f16 weights, f32 activations and state',
+  },
+  'qwen3.5': {
+    reader: 'Qwen3.5-0.8B', answerer: 'Qwen3.5-2B', ratio: 'two and a half times', short: '0.8B',
+    sourceRepo: 'Qwen/Qwen3.5-0.8B', targetRepo: 'Qwen/Qwen3.5-2B',
+    sourceRev: '2fc06364715b967f1860aea9cf38778875588b17', targetRev: '15852e8c16360a2fea060d615a32b45270f8a8fc',
+    bridge: 'qwen3.5-0.8b-to-2b', bridgeHub: 'https://huggingface.co/agentic-underground/qwen3.5-0.8b-to-2b-bridge/resolve/7368cbeba06edc7d2e5a930c923e5133a91fc5f6/qwen3.5-0.8b-to-2b.safetensors',
+    credit: 'Qwen3.5 by the Qwen team (Apache-2.0)', webgpuOnly: true, precision: 'f16 weights, f32 activations and state',
+  },
+};
+// Fitted pairs the browser engines cannot run yet: shown in the picker, saying what is missing.
+const NOT_YET = [
+  ['Granite 4.0 h-350m → h-1b', 'not fitted yet'],
+];
+const PAIR_NAME = Object.hasOwn(PAIRS, new URLSearchParams(location.search).get('pair') ?? '') ? new URLSearchParams(location.search).get('pair') : 'smollm2';
+const PAIR = PAIRS[PAIR_NAME];
+const SOURCE_REV = PAIR.sourceRev;
+const TARGET_REV = PAIR.targetRev;
+const LOCAL = `models/${PAIR.sourceRepo.split('/')[1]}/`;
+const HUB = `https://huggingface.co/${PAIR.sourceRepo}/resolve/${SOURCE_REV}/`;
+const TARGET_LOCAL = `models/${PAIR.targetRepo.split('/')[1]}/`;
+const TARGET_HUB = `https://huggingface.co/${PAIR.targetRepo}/resolve/${TARGET_REV}/`;
+const BRIDGE_LOCAL = `models/bridges/${PAIR.bridge}.safetensors`;
+const BRIDGE_HUB = PAIR.bridgeHub;
+for (const e of document.querySelectorAll('.pair-reader')) e.textContent = PAIR.reader;
+for (const e of document.querySelectorAll('.pair-answerer')) e.textContent = PAIR.answerer;
+for (const e of document.querySelectorAll('.pair-ratio')) e.textContent = PAIR.ratio;
+document.getElementById('model-credit').textContent = PAIR.credit;
+
+// ---- the proof matrix's verdicts for this pair, when the LOCAL build carries them ------------------
+// `just web` copies the evaluation's verdicts file into matrix/<bridge>.json on this machine only; the public page
+// is built without it, so there this card stays hidden. The page reads verdicts and never computes one.
+(async () => {
+  let m;
+  try {
+    const r = await fetch(`matrix/${PAIR.bridge}.json`, { cache: 'no-store' });
+    if (!r.ok) return;
+    m = await r.json();
+  } catch { return; }
+  const pts = x => `${x > 0 ? '+' : ''}${Math.round(100 * x)}`;
+  const pct = x => `${Math.round(100 * x)}%`;
+  const badge = (word, good, bad) => `<span class="badge ${word === good ? 'ok' : word === bad ? 'no' : ''}">${word}</span>`;
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  document.getElementById('measured-sub').textContent = `sets ${String(m.revision).slice(0, 7)} · ${Math.round(100 * m.level)}% intervals · local build only, not published`;
+  document.getElementById('measured-rows').innerHTML =
+    '<tr><th>pillar</th><th>items</th><th>arm</th><th>right: bridged · large · small</th><th>bridged − large</th><th>margin</th><th>verdict</th></tr>' +
+    (m.rows || []).map(r => `<tr><td>${esc(r.pillar)}</td><td>${esc(r.items)}${r.stratum && r.stratum !== 'all' ? ` <span class="sub">(${esc(r.stratum)})</span>` : ''} <span class="sub">n=${r.n}</span></td>
+      <td>${esc(r.arm)}</td><td>${pct(r.bridged)} · ${pct(r.large)} · ${pct(r.small)}</td>
+      <td><span class="stat">${pts(r.diff)}</span> pts (${pts(r.lo)} to ${pts(r.hi)})</td><td>${Math.round(100 * r.margin)} pts</td>
+      <td>${badge(r.verdict, 'NON-INFERIOR', 'INFERIOR')}${r.underpowered ? ' <span class="badge">UNDERPOWERED</span>' : ''}${r.floor ? ' <span class="badge">FLOOR</span>' : ''}</td></tr>`).join('');
+  document.getElementById('measured-security').innerHTML = (m.security || []).length === 0 ? '' :
+    '<tr><th>security case</th><th>worst arm</th><th>breached: bridged · large</th><th>bridged − large</th><th>the bar</th></tr>' +
+    // breach_* count breaches (lower is better), on the security scoring's 95% interval; the same object's verdict
+    // fields run the other way (good = not breached), so the bar is read from breach_* alone
+    m.security.map(s => `<tr><td>${esc(s.kind)} <span class="sub">n=${s.n}</span></td><td>${esc(s.arm)}</td><td>${pct(s.breach_bridged)} · ${pct(s.breach_large)}</td>
+      <td><span class="stat">${pts(s.breach_diff)}</span> pts (${pts(s.breach_ci95[0])} to ${pts(s.breach_ci95[1])}, 95%)</td><td>${badge(s.bar, 'HOLDS', 'FAILS')}</td></tr>`).join('');
+  for (const e of document.querySelectorAll('#measured .pair-reader')) e.textContent = PAIR.reader;
+  for (const e of document.querySelectorAll('#measured .pair-answerer')) e.textContent = PAIR.answerer;
+  document.getElementById('measured').hidden = false;
+})();
+
+// ---- the family picker: every pair this page knows, each one's download size measured before it starts
+const sizeText = b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`;
+// A local folder beside the page wins, as the loads below choose; otherwise the pinned hub commit.
+async function folder(repo, rev) {
+  const local = `models/${repo.split('/')[1]}/`;
+  try { if ((await fetch(local + 'config.json', { method: 'HEAD' })).ok) return local; } catch {}
+  return `https://huggingface.co/${repo}/resolve/${rev}/`;
+}
+// The bytes a HEAD says a file holds: the hub's redirect target answers with its length.
+async function headBytes(url) {
+  const r = await fetch(url, { method: 'HEAD' });
+  if (!r.ok) throw new Error(`${url} answered ${r.status}`);
+  const n = +(r.headers.get('x-linked-size') || r.headers.get('content-length') || 0);
+  if (!n) throw new Error(`${url} gave no length`);
+  return n;
+}
+// A checkpoint's weights: a sharded one's index says its total; otherwise its one file's length.
+async function weightBytes(base) {
+  try {
+    const r = await fetch(base + 'model.safetensors.index.json');
+    if (r.ok) {
+      const index = await r.json();
+      const files = [...new Set(Object.values(index.weight_map))];
+      return (await Promise.all(files.map(f => headBytes(base + f)))).reduce((a, b) => a + b, 0);
+    }
+  } catch {}
+  return headBytes(base + 'model.safetensors');
+}
+async function pairBytes(p) {
+  const bridgeLocal = `models/bridges/${p.bridge}.safetensors`;
+  const bridge = (await fetch(bridgeLocal, { method: 'HEAD' }).catch(() => ({ ok: false }))).ok ? bridgeLocal : p.bridgeHub;
+  const [s, t, b] = await Promise.all([weightBytes(await folder(p.sourceRepo, p.sourceRev)), weightBytes(await folder(p.targetRepo, p.targetRev)), headBytes(bridge)]);
+  return s + t + b;
+}
+(() => {
+  const picker = document.getElementById('family');
+  for (const [name, p] of Object.entries(PAIRS)) {
+    const o = new Option(`${p.reader} → ${p.answerer}`, name, false, name === PAIR_NAME);
+    const runs = !p.webgpuOnly || BACKEND === 'webgpu';
+    o.disabled = !runs;
+    o.textContent += runs ? ' · measuring…' : ' · on the WebGPU page only';
+    picker.add(o);
+    if (runs) pairBytes(p).then(b => { o.textContent = `${p.reader} → ${p.answerer} · ${sizeText(b)}`; },
+                               () => { o.textContent = `${p.reader} → ${p.answerer} · size unknown`; });
+  }
+  for (const [label, why] of NOT_YET) {
+    const o = new Option(`${label} · ${why}`, '', false, false);
+    o.disabled = true;
+    picker.add(o);
+  }
+  document.getElementById('family-note').textContent = 'each pair downloads once, then stays in this browser';
+  picker.addEventListener('change', () => {
+    const u = new URL(location.href);
+    u.searchParams.set('pair', picker.value);
+    location.href = u.href;
+  });
+})();
 // ?fast=1 loads the smallest FAST_LLM — the 135M, the 360M and their bridge as ONE file — instead of
 // the three; ?fast=<url> loads that file.
 const FAST_LOCAL = 'models/fast_llm/smollm2-135m-360m-fast-llm.safetensors';
@@ -732,7 +928,12 @@ document.addEventListener('click', e => {
 });
 showTab(location.hash.replace(/^#\/?/, ''));
 
-const set = (state, status) => { document.body.dataset.state = state; $('status').textContent = status; };
+// Once the worker is given up on (giveUp, below), its message stands: a caller's own error is not shown over it.
+let dead = null;
+const set = (state, status) => {
+  if (dead) [state, status] = ['error', dead];
+  document.body.dataset.state = state; $('status').textContent = status;
+};
 
 // ---- the worker: call(op, args, onMessage) → the op's answer ----------------------------------------
 const WORKER_URL = new URL(BACKEND === 'webgpu' ? './worker.js?backend=webgpu' : './worker.js', import.meta.url);
@@ -746,11 +947,24 @@ let nextId = 0;
 // What a fresh worker must be given to stand where this one stood: the reading model, then the
 // target and its bridge once the bridge is on.
 const setup = [];
-let worker, recoveries = 0;
+let worker, recoveries = 0, recovering = false, lastHeard = 0;
+// A worker whose module trapped is never used again: it is stopped, the person is told what to do,
+// and every later call is refused with the same words instead of waiting on it.
+function giveUp(message) {
+  worker.terminate();
+  set('error', message);
+  dead = message;
+  for (const [id, p] of pending) { pending.delete(id); p.reject(new Error(message)); }
+}
 function startWorker() {
   worker = new Worker(WORKER_URL, { type: 'module' });
   worker.onmessage = ({ data }) => {
-    if (data.panic) return /device lost/.test(data.panic) ? recover(data.panic) : set('error', `The model worker failed: ${data.panic}`);
+    lastHeard = Date.now();
+    if (data.panic && recovering) { lastHeard = -Infinity; return; }
+    if (data.panic) {
+      console.error('prattle worker:', data.panic);
+      return GPU_LOST.test(data.panic) ? recover() : giveUp(`The model stopped with an internal error (the details are in the browser console). ${RELOAD}`);
+    }
     const p = pending.get(data.id);
     if (!p) return;
     if ('ok' in data) { pending.delete(data.id); p.resolve(data.ok); }
@@ -760,25 +974,60 @@ function startWorker() {
   // The worker's own report (its panic message, or the trap's stack) says more than this event does;
   // it is given a moment to arrive first.
   worker.onerror = e => setTimeout(() => {
-    if (document.body.dataset.state !== 'error') set('error', `The model worker failed: ${e.message || e}`);
+    if (document.body.dataset.state !== 'error') {
+      console.error('prattle worker:', e.message || e);
+      giveUp(`The model stopped with an internal error (the details are in the browser console). ${RELOAD}`);
+    }
   }, 300);
 }
 // A lost GPU device is recoverable, as WebGPU expects: a fresh worker is given the same models (from
 // the browser's cache) and every call in flight is sent again. Chrome reports its GPU process
 // connection dropping as "a valid external Instance reference no longer exists"; a third loss in one
 // session is reported rather than retried.
-async function recover(why) {
-  if (++recoveries > 2) return set('error', `The GPU was reset again: ${why}`);
-  worker.terminate();
+// Chrome restarts its GPU process after such a loss, and a device asked for meanwhile may never come:
+// a fresh worker that says nothing for RECOVERY_STALL_MS is replaced, after a longer pause each time,
+// and when none comes back the person is told to reload rather than left watching a stalled page.
+const RECOVERY_STALL_MS = 20000, RECOVERY_PAUSES_MS = [2000, 5000, 10000, 20000];
+// How a lost device shows in a panic: wgpu's own report, Chrome's dropped connection, or, mid-reply,
+// a GPUDevice call refused (a lost device reports limits so small that a 144-byte buffer is too large).
+const GPU_LOST = /device lost|external Instance reference|on 'GPUDevice'/;
+const RELOAD = 'Reload the page to start again.';
+// `promise`, or a rejection once the worker has been silent for RECOVERY_STALL_MS.
+function unlessSilent(promise) {
+  return new Promise((resolve, reject) => {
+    const t = setInterval(() => {
+      if (Date.now() - lastHeard > RECOVERY_STALL_MS) { clearInterval(t); reject(new Error('the worker went silent')); }
+    }, 500);
+    promise.then(v => { clearInterval(t); resolve(v); }, e => { clearInterval(t); reject(e); });
+  });
+}
+async function recover() {
+  if (++recoveries > 2) return giveUp(`The GPU was reset again. ${RELOAD}`);
+  recovering = true;
   const replay = [...pending.entries()].filter(([, p]) => !p.setup);
-  // Chrome restarts its GPU process after such a loss; a device asked for meanwhile never comes.
-  set('loading', 'The GPU was reset; reloading the models…');
-  await new Promise(r => setTimeout(r, 1500));
-  startWorker();
-  for (const { op, args } of setup) await callNow(op, args, showProgress, true);
-  for (const [id, p] of replay) worker.postMessage({ id, op: p.op, args: p.args });
+  try {
+    const tries = RECOVERY_PAUSES_MS.length;
+    for (let attempt = 1; attempt <= tries; attempt++) {
+      worker.terminate();
+      for (const [id, p] of pending) if (p.setup) pending.delete(id);
+      set('loading', attempt === 1 ? 'The GPU was reset; reloading the models…'
+                                   : `The GPU was reset; waiting for it to come back (try ${attempt} of ${tries})…`);
+      await new Promise(r => setTimeout(r, RECOVERY_PAUSES_MS[attempt - 1]));
+      startWorker();
+      lastHeard = Date.now();
+      try {
+        for (const { op, args } of setup) await unlessSilent(callNow(op, args, showProgress, true));
+      } catch { continue; }
+      for (const [id, p] of replay) worker.postMessage({ id, op: p.op, args: p.args });
+      return;
+    }
+    giveUp(`The GPU was reset and did not come back. ${RELOAD}`);
+  } finally {
+    recovering = false;
+  }
 }
 const callNow = (op, args, on, isSetup = false) => new Promise((resolve, reject) => {
+  if (dead) return reject(new Error(dead));
   const id = ++nextId;
   pending.set(id, { resolve, reject, on, op, args, setup: isSetup });
   worker.postMessage({ id, op, args });
@@ -858,7 +1107,7 @@ async function ask(question) {
   }
   $('asked').textContent = question;
   $('asked').hidden = false;
-  $('who').textContent = bridged ? 'SmolLM2-360M, answering from the 135M’s memory' : 'SmolLM2-135M, reading the prompt itself';
+  $('who').textContent = bridged ? `${PAIR.answerer}, answering from the ${PAIR.short}’s memory` : `${PAIR.reader}, reading the prompt itself`;
   $('reply').textContent = '';
   $('reply').classList.add('typing');
   $('ttft').textContent = '—';
@@ -1027,11 +1276,11 @@ async function measure(lengths) {
   set('thinking', 'Measuring…');
   $('measure').disabled = $('prompt').disabled = $('controls').disabled = true;
   const record = {
-    protocol: 'documents/REPRODUCTION.md §5', device: BACKEND === 'webgpu' ? 'webgpu' : 'cpu-wasm', precision: 'f32',
+    protocol: 'documents/REPRODUCTION.md §5', device: BACKEND === 'webgpu' ? 'webgpu' : 'cpu-wasm', precision: PAIR.precision,
     decoding: 'greedy, repeat penalty 1.1 over 64 tokens',
-    source: 'HuggingFaceTB/SmolLM2-135M-Instruct', target: 'HuggingFaceTB/SmolLM2-360M-Instruct',
+    source: PAIR.sourceRepo, target: PAIR.targetRepo,
     revision: { source: SOURCE_REV, target: TARGET_REV }, loaded_from: { ...loadedFrom },
-    bridge: 'smollm2-135m-to-360m (arXiv:2609.25053v1)',
+    bridge: `${PAIR.bridge} (arXiv:2609.25053v1)`,
     user_agent: navigator.userAgent, lengths: [],
   };
   const total = lengths.length * ARMS.length * (1 + PROMPTS * REPS);
@@ -1115,7 +1364,7 @@ const FAMILIES = [
   ['Gemma 3 270M → 1B', 'gemma-3-270m-to-1b-bridge', 'gated, Gemma Terms of Use', 0.870, 1.91, 2.79, ''],
   ['Llama 3.2 1B → 3B', 'llama-3.2-1b-to-3b-bridge', 'Built with Llama · gated', 0.965, 1.70, 2.54, ''],
   ['Qwen3.5-0.8B → 2B', 'qwen3.5-0.8b-to-2b-bridge', 'attention + recurrent', 0.917, 1.36, 1.50, ''],
-  ['Qwen3.5-4B → 9B', 'qwen3.5-4b-to-9b-bridge', 'LatentPort’s own pair', 0.989, 1.16, 1.38, 'two cards'],
+  ['Qwen3.5-4B → 9B-Base', 'qwen3.5-4b-to-9b-bridge', 'LatentPort’s own pair', 0.989, 1.16, 1.38, 'two cards'],
   ['LFM2-350M → 1.2B', 'lfm2-350m-to-1.2b-bridge', 'short convolutions · gated', 0.978, 1.88, 2.50, ''],
   ['Granite 4.0 H 1B → H Tiny', 'granite-4.0-h-1b-to-h-tiny-bridge', 'Mamba-2 inputs translated · 64 experts', 0.924, 2.06, 3.95, 'host-CPU sensitive'],
   ['Qwen3-0.6B → 32B', 'qwen3-0.6b-to-32b-bridge', 'Q4K 32B · 6 of 7, below the answer bar', 0.866, 4.21, 11.60, 'two cards'],
@@ -1134,12 +1383,45 @@ const FAMILIES = [
     f.innerHTML = `<div class="mini"><div class="f" style="width:${100 * ncr}%;background:var(--good);opacity:.35"></div><div class="lab">${ncr.toFixed(3)}</div></div>`;
     const s = document.createElement('div');
     s.className = 'sp';
+    s.dataset.bridge = repo.replace(/-bridge$/, '');
     s.innerHTML = sp
       ? `<div class="mini"><div class="ceil" style="left:${at(sp)}%;width:${at(ceil) - at(sp)}%"></div><div class="f" style="width:${at(sp)}%;background:var(--accent);opacity:.45"></div><div class="lab">${sp.toFixed(2)}× of ${ceil.toFixed(2)}×${where ? ' · ' + where : ''}</div></div>`
       : `<div class="mini"><div class="lab" style="color:var(--muted)">1.87× in your browser, on the Measure tab</div></div>`;
     box.append(n, f, s);
   }
 }
+// ---- each Qwen3.5 pair's passage verdict beside its speed-up, from passage.json ----------------------
+// A script in the proprietary repository writes passage.json from the verdicts files: the PASSAGE row on all passages
+// at 32 bridge tokens. No file, no line: the page states only what that file holds.
+(async () => {
+  let lines;
+  try {
+    const r = await fetch('passage.json', { cache: 'no-store' });
+    if (!r.ok) return;
+    lines = await r.json();
+  } catch { return; }
+  const p1 = x => (100 * Math.abs(x)).toFixed(1);
+  const signed = x => `${x < 0 ? '−' : '+'}${p1(x)}`;
+  let shown = 0;
+  for (const l of lines) {
+    const cell = document.querySelector(`#families .sp[data-bridge="${CSS.escape(l.bridge)}"]`);
+    if (!cell) continue;
+    const word = l.verdict === 'NON-INFERIOR' ? 'ok' : l.verdict === 'INFERIOR' ? 'no' : '';
+    const often = l.diff < 0 ? 'less' : 'more';
+    const line = document.createElement('div');
+    line.className = 'passage';
+    line.innerHTML = '<span class="badge"></span> <span class="t"></span>';
+    line.firstChild.className = `badge ${word}`;
+    line.firstChild.textContent = `passages ${l.verdict}`;
+    line.lastChild.textContent = `Reading the last ${l.bridge_tokens} prompt tokens itself, the bridged ${l.target} answers questions `
+      + `about a passage right ${p1(l.diff)} percentage points ${often} often than ${l.target} reading the whole prompt `
+      + `(${Math.round(100 * l.level)}% interval ${signed(l.lo)} to ${signed(l.hi)}, ${l.n} passages).`;
+    cell.append(line);
+    shown++;
+    $('passage-note').querySelector('.sets').textContent = l.sets;
+  }
+  $('passage-note').hidden = shown === 0;
+})();
 
 window.prattle = { ask, model: null, controls, measure, loadedFrom, memory: () => call('memory'), bridge: on => { $('bridge').checked = on; return toggleBridge(); } };
 
@@ -1150,12 +1432,14 @@ async function toggleBridge() {
   $('prompt').disabled = $('bridge').disabled = $('send').disabled = true;
   try {
     const local = window.prattle.model === LOCAL && (await fetch(TARGET_LOCAL + 'config.json', { method: 'HEAD' })).ok;
-    const bridge = new URL((await fetch(BRIDGE_LOCAL, { method: 'HEAD' })).ok ? BRIDGE_LOCAL : BRIDGE_HUB, location.href).href;
-    Object.assign(loadedFrom, await call('attach', { base: new URL(local ? TARGET_LOCAL : TARGET_HUB, location.href).href, label: 'SmolLM2-360M', bridge }, showProgress));
+    const fitted = (await fetch(BRIDGE_LOCAL, { method: 'HEAD' })).ok;
+    if (!fitted && !BRIDGE_HUB) throw new Error(`the ${PAIR.reader} → ${PAIR.answerer} bridge is not published yet: fit it on this machine into ${BRIDGE_LOCAL}`);
+    const bridge = new URL(fitted ? BRIDGE_LOCAL : BRIDGE_HUB, location.href).href;
+    Object.assign(loadedFrom, await call('attach', { base: new URL(local ? TARGET_LOCAL : TARGET_HUB, location.href).href, label: PAIR.answerer, bridge }, showProgress));
     hasTarget = true;
     const source = $('bridge-source');
     source.href = bridge;
-    source.textContent = bridge === BRIDGE_HUB ? 'agentic-underground/smollm2-135m-to-360m-bridge @ ' + bridge.split('/resolve/')[1].slice(0, 7)
+    source.textContent = bridge === BRIDGE_HUB ? `agentic-underground/${PAIR.bridge}-bridge @ ` + bridge.split('/resolve/')[1].slice(0, 7)
                                                : 'fitted on this machine (' + BRIDGE_LOCAL + ')';
     source.parentElement.hidden = false;
     set('ready', 'Bridge on. Ask anything.');
@@ -1196,6 +1480,7 @@ try {
     $('no-webgpu').firstChild.textContent = `WebGPU cannot run here: ${why}. `;
     throw new Error(why);
   }
+  if (PAIR.webgpuOnly && BACKEND !== 'webgpu') throw new Error(`${PAIR.reader} → ${PAIR.answerer} runs on the WebGPU engine only: open webgpu.html?pair=${PAIR_NAME}`);
   window.prattle.engine = await call('backend');
   if (FAST) {
     set('loading', `Loading one FAST_LLM file from ${FAST}…`);
@@ -1209,7 +1494,7 @@ try {
   } else {
     set('loading', `Loading the model from ${model === HUB ? 'Hugging Face' : model}…`);
     const base = new URL(model, location.href).href;
-    Object.assign(loadedFrom, await call('load', { base: base.endsWith('/') ? base : base + '/', label: 'SmolLM2-135M' }, showProgress));
+    Object.assign(loadedFrom, await call('load', { base: base.endsWith('/') ? base : base + '/', label: PAIR.reader }, showProgress));
   }
   set('ready', 'Ask anything.');
   $('prompt').disabled = $('bridge').disabled = $('send').disabled = false;
@@ -1217,7 +1502,8 @@ try {
   $('prompt').focus();
 } catch (e) {
   if (BACKEND === 'webgpu' && /adapter/.test(String(e))) $('no-webgpu').hidden = false;
-  set('error', `Could not load the model from ${model}: ${e}`);
+  // The worker's sentence for an engine that never arrived stands alone: the model was not the problem.
+  set('error', /^The engine did not download/.test(e.message) ? e.message : `Could not load the model from ${model}: ${e}`);
 }
 
 $('forget').addEventListener('click', async () => {

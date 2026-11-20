@@ -15,7 +15,7 @@
 //! Mamba layer's slot is (C, S) — C the last `conv − 1` pre-conv rows `[1, conv_channels, conv − 1]`,
 //! S the scan state `[1, heads, head_dim, d_state]` — what a bridge copies across.
 
-use candle_core::{D, DType, Device, Module, Result, Tensor};
+use candle_core::{DType, Device, Module, Result, Tensor};
 use candle_nn::VarBuilder;
 
 use crate::half::{Embed, Lin, embedding, linear, small};
@@ -202,14 +202,14 @@ pub struct Granite {
 }
 
 impl Granite {
-    pub fn load(config_json: &[u8], weights: Vec<u8>, device: &Device) -> std::result::Result<Granite, String> {
+    pub fn load(config_json: &[u8], weights: impl Into<crate::weights::Weights>, device: &Device) -> std::result::Result<Granite, String> {
         Self::load_in(config_json, weights, device, DType::F32)
     }
 
     /// As `load`, its weights held in `dtype` (`crate::half`).
-    pub fn load_in(config_json: &[u8], weights: Vec<u8>, device: &Device, dtype: DType) -> std::result::Result<Granite, String> {
+    pub fn load_in(config_json: &[u8], weights: impl Into<crate::weights::Weights>, device: &Device, dtype: DType) -> std::result::Result<Granite, String> {
         let cfg = Config::from_json(config_json)?;
-        let vb = VarBuilder::from_buffered_safetensors(weights, dtype, device).map_err(|e| e.to_string())?;
+        let vb = weights.into().builder(dtype, device)?;
         Self::build(cfg, vb).map_err(|e| e.to_string())
     }
 
@@ -330,6 +330,12 @@ impl Granite {
         self.logits(&x)
     }
 
+    /// Logits from residual rows `[.., hidden]`: the final norm, the head, and the family's own scaling —
+    /// what `forward_capture` does to the last layer's output (a logit lens reads any layer's).
+    pub fn unembed(&self, x: &Tensor) -> Result<Tensor> {
+        self.logits(&self.norm.forward(x, self.differentiable)?)
+    }
+
     pub fn forward_capture(&self, ids: &Tensor, pos: usize, kv: &mut Kv, capture: Option<&mut Vec<Tensor>>) -> Result<Tensor> {
         let x = self.run(ids, pos, kv, capture)?;
         let n = x.dim(1)?;
@@ -379,13 +385,7 @@ impl Granite {
             v = Tensor::cat(&[pv, &v], 2)?.contiguous()?;
         }
         *slot = Some((k.clone(), v.clone()));
-        let group = c.heads / c.kv_heads;
-        let k = candle_transformers::utils::repeat_kv(k, group)?;
-        let v = candle_transformers::utils::repeat_kv(v, group)?;
-        let att = (q.matmul(&k.t()?.contiguous()?)? * c.attention_multiplier)?;
-        let att = if n == 1 { att } else { causal(&att, n, pos)? };
-        let p = if self.differentiable { candle_nn::ops::softmax(&att, D::Minus1)? } else { candle_nn::ops::softmax_last_dim(&att)? };
-        let o = p.matmul(&v.contiguous()?)?.transpose(1, 2)?.reshape((b, n, c.heads * hd))?;
+        let o = crate::attend::attend(&q, k, v, pos, c.attention_multiplier, None, self.differentiable)?;
         a.o.forward(&o)
     }
 
@@ -476,12 +476,4 @@ fn scan_chunks(x: &Tensor, bm: &Tensor, cm: &Tensor, log_decay: &Tensor, state: 
 /// log(1 + eˣ) without overflow: max(x, 0) + log(1 + e^−|x|).
 fn softplus(x: &Tensor) -> Result<Tensor> {
     x.relu()? + (x.abs()?.neg()?.exp()? + 1.0)?.log()?
-}
-
-fn causal(att: &Tensor, n: usize, pos: usize) -> Result<Tensor> {
-    let total = pos + n;
-    let mask: Vec<u8> = (0..n).flat_map(|i| (0..total).map(move |j| u8::from(j > pos + i))).collect();
-    let mask = Tensor::from_slice(&mask, (n, total), att.device())?.broadcast_as(att.shape())?;
-    let neg = Tensor::new(f32::NEG_INFINITY, att.device())?.broadcast_as(att.shape())?;
-    mask.where_cond(&neg, att)
 }

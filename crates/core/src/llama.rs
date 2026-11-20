@@ -111,27 +111,12 @@ impl Attention {
         }
         *slot = Some((k.clone(), v.clone()));
 
-        let group = self.heads / self.kv_heads;
-        let k = candle_transformers::utils::repeat_kv(k, group)?;
-        let v = candle_transformers::utils::repeat_kv(v, group)?;
-        let att = (q.matmul(&k.t()?)? / (self.head_dim as f64).sqrt())?;
-        let att = if n == 1 { att } else { causal_mask(&att, n, pos)? };
-        let p = if diff { candle_nn::ops::softmax(&att, candle_core::D::Minus1)? } else { candle_nn::ops::softmax_last_dim(&att)? };
-        crate::observe::attention(&p)?;
-        let y = p.matmul(&v.contiguous()?)?;
-        self.o.forward(&y.transpose(1, 2)?.reshape((b, n, self.heads * self.head_dim))?)
+        let y = crate::attend::attend(&q, k, v, pos, 1.0 / (self.head_dim as f64).sqrt(), None, diff)?;
+        self.o.forward(&y)
     }
 }
 
-/// Query row i (at absolute position pos+i) may see keys 0..=pos+i.
-fn causal_mask(att: &Tensor, n: usize, pos: usize) -> Result<Tensor> {
-    let total = pos + n;
-    let mask: Vec<u8> = (0..n).flat_map(|i| (0..total).map(move |j| u8::from(j > pos + i))).collect();
-    let mask = Tensor::from_slice(&mask, (n, total), att.device())?.broadcast_as(att.shape())?;
-    let neg = Tensor::new(f32::NEG_INFINITY, att.device())?.broadcast_as(att.shape())?;
-    mask.where_cond(&neg, att)
-}
-
+#[derive(Clone)]
 struct Rope {
     cos: Tensor,
     sin: Tensor,
@@ -218,7 +203,9 @@ pub struct Llama {
     blocks: Vec<Block>,
     norm: Norm,
     head: Lin,
-    rope: Rope,
+    /// Each block's device, and RoPE's tables on it — one model's layers may span several cards.
+    devices: Vec<Device>,
+    ropes: Vec<Rope>,
     geometry: Geometry,
 }
 
@@ -230,18 +217,45 @@ impl Llama {
 
     /// With the head width given — Qwen3 declares `head_dim` apart from hidden / heads.
     pub fn load_with_head_dim(vb: VarBuilder, cfg: &Config, head_dim: usize) -> Result<Self> {
-        let embed = embedding(cfg.vocab_size, cfg.hidden_size, vb.pp("model.embed_tokens"))?;
+        let one = vec![vb.device().clone(); cfg.num_hidden_layers];
+        Self::load_across(vb, cfg, head_dim, &one)
+    }
+
+    /// With block i on `devices[i]` — one model's layers across several cards (`crate::device::spread`).
+    /// The embedding sits with the first block, the final norm and head with the last.
+    pub fn load_across(vb: VarBuilder, cfg: &Config, head_dim: usize, devices: &[Device]) -> Result<Self> {
+        if devices.len() != cfg.num_hidden_layers {
+            candle_core::bail!("{} devices for {} layers", devices.len(), cfg.num_hidden_layers);
+        }
+        let on = |d: &Device| vb.clone().set_device(d.clone());
+        let (first, last) = (&devices[0], &devices[devices.len() - 1]);
+        let embed = embedding(cfg.vocab_size, cfg.hidden_size, on(first).pp("model.embed_tokens"))?;
         let head = if cfg.tie_word_embeddings {
-            Lin::new(embed.embeddings().clone(), None)
+            Lin::new(embed.embeddings().to_device(last)?, None)
         } else {
-            linear(cfg.hidden_size, cfg.vocab_size, vb.pp("lm_head"))?
+            linear(cfg.hidden_size, cfg.vocab_size, on(last).pp("lm_head"))?
         };
-        let blocks =
-            (0..cfg.num_hidden_layers).map(|i| Block::load(vb.pp(format!("model.layers.{i}")), cfg, head_dim)).collect::<Result<_>>()?;
+        let blocks = (0..cfg.num_hidden_layers)
+            .map(|i| Block::load(on(&devices[i]).pp(format!("model.layers.{i}")), cfg, head_dim))
+            .collect::<Result<_>>()?;
+        let mut distinct: Vec<Rope> = Vec::new();
+        let mut ropes = Vec::with_capacity(devices.len());
+        for d in devices {
+            let rope = match distinct.iter().find(|r| r.cos.device().same_device(d)) {
+                Some(r) => r.clone(),
+                None => {
+                    let r = Rope::new(cfg, head_dim, d)?;
+                    distinct.push(r.clone());
+                    r
+                }
+            };
+            ropes.push(rope);
+        }
         Ok(Self {
             differentiable: false,
-            norm: Norm::load(cfg.hidden_size, cfg.rms_norm_eps, vb.pp("model.norm"))?,
-            rope: Rope::new(cfg, head_dim, vb.device())?,
+            norm: Norm::load(cfg.hidden_size, cfg.rms_norm_eps, on(last).pp("model.norm"))?,
+            devices: devices.to_vec(),
+            ropes,
             geometry: Geometry {
                 layers: cfg.num_hidden_layers,
                 kv_heads: cfg.num_key_value_heads,
@@ -258,11 +272,22 @@ impl Llama {
     /// absolute position `pos` — the bridge maps keys in de-rotated space.
     pub fn rotate_keys(&self, k: &Tensor, pos: usize, inverse: bool) -> Result<Tensor> {
         let n = k.dim(2)?;
-        let cos = self.rope.cos.narrow(0, pos, n)?;
-        let sin = self.rope.sin.narrow(0, pos, n)?;
+        let rope = self.ropes.iter().find(|r| r.cos.device().same_device(k.device())).unwrap_or(&self.ropes[0]);
+        let cos = rope.cos.narrow(0, pos, n)?;
+        let sin = rope.sin.narrow(0, pos, n)?;
         // rope(x) = x·cos + rotate_half(x)·sin; its inverse is the same with −sin.
         let sin = if inverse { sin.neg()? } else { sin };
         candle_nn::rotary_emb::rope(&k.contiguous()?, &cos, &sin)
+    }
+
+    /// Each block's device, in order.
+    pub fn layer_devices(&self) -> &[Device] {
+        &self.devices
+    }
+
+    /// `x` on block i's device — moved across where the layers change card.
+    fn onto(&self, x: Tensor, i: usize) -> Result<Tensor> {
+        if x.device().same_device(&self.devices[i]) { Ok(x) } else { crate::device::moved(&x, &self.devices[i]) }
     }
 
     pub fn set_differentiable(&mut self, on: bool) {
@@ -295,22 +320,29 @@ impl Llama {
     /// Logits at EVERY position of `ids`, `[batch, n, vocab]` — what a distribution-matching loss needs.
     pub fn forward_all(&self, ids: &Tensor, pos: usize, kv: &mut Kv) -> Result<Tensor> {
         let mut x = self.embed.forward(ids)?;
-        for (block, slot) in self.blocks.iter().zip(kv.layers.iter_mut()) {
-            x = block.forward(&x, pos, &self.rope, slot, self.differentiable)?;
+        for (i, (block, slot)) in self.blocks.iter().zip(kv.layers.iter_mut()).enumerate() {
+            x = block.forward(&self.onto(x, i)?, pos, &self.ropes[i], slot, self.differentiable)?;
         }
         self.head.forward(&self.norm.forward(&x, self.differentiable)?)?.to_dtype(DType::F32)
     }
 
     /// As `forward`, also pushing each layer's INPUT residual stream `[batch, n, hidden]` into
     /// `capture` — the features a bridge can map from.
+    /// Logits from residual rows `[.., hidden]`: the final norm, the head, and the family's own scaling —
+    /// what `forward_capture` does to the last layer's output (a logit lens reads any layer's).
+    pub fn unembed(&self, x: &Tensor) -> Result<Tensor> {
+        self.head.forward(&self.norm.forward(x, self.differentiable)?)?.to_dtype(DType::F32)
+    }
+
     pub fn forward_capture(&self, ids: &Tensor, pos: usize, kv: &mut Kv, mut capture: Option<&mut Vec<Tensor>>) -> Result<Tensor> {
         let n = ids.dim(1)?;
         let mut x = self.embed.forward(ids)?;
-        for (block, slot) in self.blocks.iter().zip(kv.layers.iter_mut()) {
+        for (i, (block, slot)) in self.blocks.iter().zip(kv.layers.iter_mut()).enumerate() {
+            x = self.onto(x, i)?;
             if let Some(c) = capture.as_deref_mut() {
                 c.push(x.clone());
             }
-            x = block.forward(&x, pos, &self.rope, slot, self.differentiable)?;
+            x = block.forward(&x, pos, &self.ropes[i], slot, self.differentiable)?;
         }
         let x = self.norm.forward(&x, self.differentiable)?.i((.., n - 1, ..))?.contiguous()?;
         self.head.forward(&x)?.to_dtype(DType::F32)

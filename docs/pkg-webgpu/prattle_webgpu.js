@@ -306,15 +306,15 @@ function takeFromExternrefTable0(idx) {
     return value;
 }
 function __wbg_adapter_28(arg0, arg1, arg2) {
-    wasm.closure1449_externref_shim(arg0, arg1, arg2);
+    wasm.closure1472_externref_shim(arg0, arg1, arg2);
 }
 
 function __wbg_adapter_31(arg0, arg1, arg2) {
-    wasm.closure1476_externref_shim(arg0, arg1, arg2);
+    wasm.closure1499_externref_shim(arg0, arg1, arg2);
 }
 
-function __wbg_adapter_270(arg0, arg1, arg2, arg3) {
-    wasm.closure1492_externref_shim(arg0, arg1, arg2, arg3);
+function __wbg_adapter_280(arg0, arg1, arg2, arg3) {
+    wasm.closure1515_externref_shim(arg0, arg1, arg2, arg3);
 }
 
 const __wbindgen_enum_GpuDeviceLostReason = ["unknown", "destroyed"];
@@ -371,6 +371,35 @@ export class Session {
         return ret !== 0;
     }
     /**
+     * Begin the answering model; its weights arrive through `feed`, then `finish_target`.
+     * @param {Uint8Array} config
+     */
+    begin_target(config) {
+        const ptr0 = passArray8ToWasm0(config, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.session_begin_target(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    finish_source() {
+        const ret = wasm.session_finish_source(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Uint8Array} bridge
+     */
+    finish_target(bridge) {
+        const ptr0 = passArray8ToWasm0(bridge, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.session_finish_target(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * @param {string} question
      * @returns {number}
      */
@@ -424,6 +453,34 @@ export class Session {
         }
     }
     /**
+     * The next piece of the file arriving, in order.
+     * @param {Uint8Array} bytes
+     */
+    feed(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.session_feed(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * A session whose reading model's weights then arrive in pieces — `feed`, `next_file` between
+     * the files of a sharded checkpoint, `finish_source` at the end — so a file larger than this
+     * module's 4 GiB of memory still loads: a promise.
+     * @param {Uint8Array} config
+     * @param {Uint8Array} tokenizer
+     * @returns {Promise<any>}
+     */
+    static open(config, tokenizer) {
+        const ptr0 = passArray8ToWasm0(config, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(tokenizer, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.session_open(ptr0, len0, ptr1, len1);
+        return ret;
+    }
+    /**
      * A promise of the text the next token adds, or `undefined` when the reply is finished. The
      * worker awaits each step before the next, so the model is never borrowed twice.
      * @returns {Promise<any>}
@@ -452,6 +509,15 @@ export class Session {
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
+    }
+    /**
+     * The model arriving goes on to its next file.
+     */
+    next_file() {
+        const ret = wasm.session_next_file(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
     }
     /**
      * @param {string} question
@@ -534,6 +600,12 @@ function __wbg_get_imports() {
         const ret = arg0.call(arg1, arg2);
         return ret;
     }, arguments) };
+    imports.wbg.__wbg_clearBuffer_2b0a3c8ac8b1cdab = function(arg0, arg1, arg2, arg3) {
+        arg0.clearBuffer(arg1, arg2, arg3);
+    };
+    imports.wbg.__wbg_clearBuffer_d734bcb0f4fad3c6 = function(arg0, arg1, arg2) {
+        arg0.clearBuffer(arg1, arg2);
+    };
     imports.wbg.__wbg_copyBufferToBuffer_8391faedae7bae2d = function() { return handleError(function (arg0, arg1, arg2, arg3, arg4) {
         arg0.copyBufferToBuffer(arg1, arg2, arg3, arg4);
     }, arguments) };
@@ -801,7 +873,7 @@ function __wbg_get_imports() {
                 const a = state0.a;
                 state0.a = 0;
                 try {
-                    return __wbg_adapter_270(a, state0.b, arg0, arg1);
+                    return __wbg_adapter_280(a, state0.b, arg0, arg1);
                 } finally {
                     state0.a = a;
                 }
@@ -1023,12 +1095,12 @@ function __wbg_get_imports() {
         const ret = false;
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper4064 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 1450, __wbg_adapter_28);
+    imports.wbg.__wbindgen_closure_wrapper4203 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 1473, __wbg_adapter_28);
         return ret;
     };
-    imports.wbg.__wbindgen_closure_wrapper4516 = function(arg0, arg1, arg2) {
-        const ret = makeMutClosure(arg0, arg1, 1477, __wbg_adapter_31);
+    imports.wbg.__wbindgen_closure_wrapper4656 = function(arg0, arg1, arg2) {
+        const ret = makeMutClosure(arg0, arg1, 1500, __wbg_adapter_31);
         return ret;
     };
     imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {

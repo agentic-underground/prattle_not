@@ -67,8 +67,8 @@ pub fn write(tensors: &[(String, serde_json::Value, &[u8])], metadata: &BTreeMap
 /// safetensors buffer of its own with the prefix removed, and the header's metadata.
 pub struct FastLlm {
     pub metadata: BTreeMap<String, String>,
-    pub source: Vec<u8>,
-    pub target: Vec<u8>,
+    pub source: crate::weights::Weights,
+    pub target: crate::weights::Weights,
     pub bridge: Vec<u8>,
     /// A THIN file's model parts, by side ("source", "target"): each a reference to its publisher's
     /// files in place of tensors, its weights empty until `resolve` fetches and checks them.
@@ -100,11 +100,24 @@ pub struct RefFile {
     pub sha256: String,
 }
 
+/// One file of a reference already in the HF cache at `cache` (the `hub` folder), by its pinned revision's
+/// snapshot — the folder the Python HF tools fill when they download at a sha, without the `refs/<sha>` file
+/// the hub client looks up first. A branch or tag name is never trusted from the cache. The caller checks
+/// the file's size and sha256 against the manifest, as it does a fetched one.
+pub fn cached(cache: &std::path::Path, r: &Ref, name: &str) -> Option<std::path::PathBuf> {
+    let pinned = r.revision.len() == 40 && r.revision.bytes().all(|b| b.is_ascii_hexdigit());
+    let path = cache.join(format!("models--{}", r.repo.replace('/', "--"))).join("snapshots").join(&r.revision).join(name);
+    (pinned && path.is_file()).then_some(path)
+}
+
 /// One file of a reference, fetched from the Hugging Face Hub into the usual HF cache (a second fetch
 /// downloads nothing) and its local path returned. The reader's own login is used — `HF_TOKEN`, or the
 /// token the HF tools saved — read by the hub client itself: this code never opens or prints it.
 #[cfg(feature = "hub")]
 pub fn hub_fetch(r: &Ref, name: &str) -> Result<std::path::PathBuf, String> {
+    if let Some(path) = cached(hf_hub::Cache::from_env().path(), r, name) {
+        return Ok(path);
+    }
     let api = hf_hub::api::sync::ApiBuilder::from_env().with_progress(false).build().map_err(|e| format!("the hub client: {e}"))?;
     let repo = api.repo(hf_hub::Repo::with_revision(r.repo.clone(), hf_hub::RepoType::Model, r.revision.clone()));
     repo.get(name).map_err(|e| format!("{} {name} @ {}: {e} — a gated model needs your own Hugging Face login and its licence accepted", r.repo, r.revision))
@@ -124,7 +137,8 @@ fn parse_ref(part: &serde_json::Value) -> Result<Option<Ref>, String> {
 }
 
 impl FastLlm {
-    pub fn unpack(bytes: &[u8]) -> Result<FastLlm, String> {
+    pub fn unpack(file: Vec<u8>) -> Result<FastLlm, String> {
+        let bytes = file.as_slice();
         let (header, metadata, body) = parse(bytes)?;
         let manifest: serde_json::Value = serde_json::from_str(metadata.get("fast_llm").ok_or("not a FAST_LLM: no fast_llm manifest")?).map_err(|e| format!("fast_llm manifest: {e}"))?;
         if manifest["format"] != FORMAT {
@@ -164,8 +178,22 @@ impl FastLlm {
             write(&tensors, &BTreeMap::new(), &mut out)?;
             Ok(out)
         };
-        let side = |name: &str| if refs.contains_key(name) { Ok(Vec::new()) } else { part(&format!("{name}.")) };
-        Ok(FastLlm { source: side("source")?, target: side("target")?, bridge: part("bridge.")?, metadata, refs, quantized })
+        let bridge = part("bridge.")?;
+        let embedded = |name: &str| !refs.contains_key(name);
+        for name in ["source", "target"] {
+            let prefix = format!("{name}.");
+            if embedded(name) && !header.keys().any(|n| n.starts_with(&prefix) && !n.starts_with(QUANTIZED)) {
+                return Err(format!("FAST_LLM file has no {prefix}* tensors"));
+            }
+        }
+        let (embed_source, embed_target) = (embedded("source"), embedded("target"));
+        // both models are read in place from the file: it is moved, never copied
+        let whole = crate::half::Shared::new(file).map_err(|e| e.to_string())?;
+        let side = |embed: bool, prefix: &str, hidden: Option<&str>| -> crate::weights::Weights {
+            if embed { whole.part(prefix, hidden).into() } else { Vec::new().into() }
+        };
+        let (source, target) = (side(embed_source, "source.", None), side(embed_target, "target.", Some(QUANTIZED)));
+        Ok(FastLlm { source, target, bridge, metadata, refs, quantized })
     }
 
     /// Fetch every referenced part with `fetch` (the local path of one file of a `Ref`), check each
@@ -193,8 +221,8 @@ impl FastLlm {
             let mut weights = Vec::new();
             write(&tensors, &BTreeMap::new(), &mut weights)?;
             match side.as_str() {
-                "source" => self.source = weights,
-                _ => self.target = weights,
+                "source" => self.source = weights.into(),
+                _ => self.target = weights.into(),
             }
         }
         Ok(self)
@@ -248,7 +276,13 @@ pub fn target_file() -> Option<std::path::PathBuf> {
 /// The target every tool runs: from `target_file()` when it is set, else `dir`'s own weights — at
 /// PRATTLE_TARGET_DTYPE either way (`crate::device`).
 pub fn target_decoder(dir: &str, device: &candle_core::Device) -> Result<crate::decoder::Decoder, String> {
-    target_decoder_from(dir, target_file().as_deref(), device, crate::device::target_dtype()?, crate::device::target_quant()?)
+    target_decoder_across(dir, std::slice::from_ref(device))
+}
+
+/// As `target_decoder`, its layers across `devices` (`crate::model::load_decoder_across`) — pass the
+/// same devices the `Model` was placed across (`place_target_across`), so its input lands on the first.
+pub fn target_decoder_across(dir: &str, devices: &[candle_core::Device]) -> Result<crate::decoder::Decoder, String> {
+    target_decoder_from(dir, target_file().as_deref(), devices, crate::device::target_dtype()?, crate::device::target_quant()?)
 }
 
 /// As `target_decoder`, the file and the precision given. A pre-quantized file's own GGML type wins
@@ -258,16 +292,16 @@ pub fn target_decoder(dir: &str, device: &candle_core::Device) -> Result<crate::
 pub fn target_decoder_from(
     dir: &str,
     file: Option<&std::path::Path>,
-    device: &candle_core::Device,
+    devices: &[candle_core::Device],
     dtype: candle_core::DType,
     quant: Option<candle_core::quantized::GgmlDType>,
 ) -> Result<crate::decoder::Decoder, String> {
     let config = std::fs::read(format!("{dir}/config.json")).map_err(|e| format!("{dir}/config.json: {e}"))?;
     let Some(file) = file else {
-        return crate::model::load_decoder_q(&config, crate::weights::read_dir(dir)?, device, dtype, quant);
+        return crate::model::load_decoder_across(&config, crate::weights::read_dir(dir)?, devices, dtype, quant, None);
     };
     let path = file.to_string_lossy();
-    let f = FastLlm::unpack(&crate::weights::read_file(&path)?)?;
+    let f = FastLlm::unpack(crate::weights::read_file(&path)?)?;
     if let Some(r) = f.refs.get("target") {
         return Err(format!("{path}: a THIN FAST_LLM, its target is {} @ {} — give a FULL or Q4K file", r.repo, r.revision));
     }
@@ -277,10 +311,10 @@ pub fn target_decoder_from(
     }
     let FastLlm { target, quantized, .. } = f;
     match quantized {
-        None => crate::model::load_decoder_q(&config, target, device, dtype, quant),
+        None => crate::model::load_decoder_across(&config, target, devices, dtype, quant, None),
         Some(q) => {
             let (ggml, ready) = q.qtensors()?;
-            crate::model::load_decoder_q_ready(&config, target, device, dtype, Some(ggml), Some(ready))
+            crate::model::load_decoder_across(&config, target, devices, dtype, Some(ggml), Some(ready))
         }
     }
 }
@@ -306,4 +340,34 @@ impl Quantized {
 pub fn language_model(names: &[String]) -> impl Fn(&str) -> bool + use<> {
     let multimodal = names.iter().any(|n| n.contains("language_model."));
     move |n: &str| !multimodal || n.contains("language_model.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn r(revision: &str) -> Ref {
+        Ref { repo: "Qwen/Qwen3.5-2B".into(), revision: revision.into(), files: Vec::new() }
+    }
+
+    /// A file the Python tools downloaded at a pinned sha is found in its snapshot, with no `refs/<sha>`;
+    /// a missing file, or a revision that is a branch name, is not.
+    #[test]
+    fn a_pinned_snapshot_in_the_cache_is_found_without_its_ref() {
+        let sha = "15852e8c16360a2fea060d615a32b45270f8a8fc";
+        let cache = std::env::temp_dir().join(format!("prattle-cached-{}", std::process::id()));
+        let snap = cache.join("models--Qwen--Qwen3.5-2B").join("snapshots").join(sha);
+        std::fs::create_dir_all(&snap).unwrap();
+        std::fs::write(snap.join("config.json"), b"{}").unwrap();
+        let main = cache.join("models--Qwen--Qwen3.5-2B").join("snapshots").join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::write(main.join("config.json"), b"{}").unwrap();
+        let found = cached(&cache, &r(sha), "config.json");
+        let missing = cached(&cache, &r(sha), "tokenizer.json");
+        let branch = cached(&cache, &r("main"), "config.json");
+        std::fs::remove_dir_all(&cache).unwrap();
+        assert_eq!(found, Some(snap.join("config.json")));
+        assert_eq!(missing, None);
+        assert_eq!(branch, None, "a branch name was trusted from the cache");
+    }
 }

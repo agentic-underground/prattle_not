@@ -14,7 +14,7 @@
 //! layer of their own kind. A shared layer's slot in `Kv` stays empty. Those layers' MLPs may be twice
 //! as wide (`use_double_wide_mlp`).
 
-use candle_core::{D, DType, Device, Result, Tensor};
+use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{Module, VarBuilder};
 
 use crate::half::{Embed, Lin, embedding, linear, small};
@@ -221,13 +221,13 @@ pub struct Gemma4 {
 const MAX_POSITIONS: usize = 8192;
 
 impl Gemma4 {
-    pub fn load(config_json: &[u8], weights: Vec<u8>, device: &Device) -> std::result::Result<Gemma4, String> {
+    pub fn load(config_json: &[u8], weights: impl Into<crate::weights::Weights>, device: &Device) -> std::result::Result<Gemma4, String> {
         Self::load_in(config_json, weights, device, DType::F32)
     }
 
     /// As `load`, its weights held in `dtype` (`crate::half`).
-    pub fn load_in(config_json: &[u8], weights: Vec<u8>, device: &Device, dtype: DType) -> std::result::Result<Gemma4, String> {
-        let vb = VarBuilder::from_buffered_safetensors(weights, dtype, device).map_err(|e| e.to_string())?;
+    pub fn load_in(config_json: &[u8], weights: impl Into<crate::weights::Weights>, device: &Device, dtype: DType) -> std::result::Result<Gemma4, String> {
+        let vb = weights.into().builder(dtype, device)?;
         Self::from_builder(config_json, vb)
     }
 
@@ -352,6 +352,12 @@ impl Gemma4 {
         self.logits(&x)
     }
 
+    /// Logits from residual rows `[.., hidden]`: the final norm, the head, and the family's own scaling —
+    /// what `forward_capture` does to the last layer's output (a logit lens reads any layer's).
+    pub fn unembed(&self, x: &Tensor) -> Result<Tensor> {
+        self.logits(&self.norm.forward(x, self.differentiable)?)
+    }
+
     pub fn forward_capture(&self, ids: &Tensor, pos: usize, kv: &mut Kv, capture: Option<&mut Vec<Tensor>>) -> Result<Tensor> {
         let x = self.run(ids, pos, kv, capture)?;
         let n = x.dim(1)?;
@@ -413,13 +419,8 @@ impl Gemma4 {
                 (None, Some(from)) => slots[from].clone().ok_or_else(|| candle_core::Error::Msg(format!("layer {i}: layer {from}'s keys are not there yet")))?,
                 (None, None) => candle_core::bail!("layer {i}: no keys and no layer to share them from"),
             };
-            let group = c.heads / spec.kv_heads;
-            let k = candle_transformers::utils::repeat_kv(k, group)?;
-            let v = candle_transformers::utils::repeat_kv(v, group)?;
-            let att = q.matmul(&k.t()?)?;
-            let att = mask(&att, n, pos, if spec.global { None } else { Some(c.sliding_window) })?;
-            let p = if diff { candle_nn::ops::softmax(&att, D::Minus1)? } else { candle_nn::ops::softmax_last_dim(&att)? };
-            let a = p.matmul(&v.contiguous()?)?.transpose(1, 2)?.reshape((b, n, c.heads * hd))?;
+            let window = if spec.global { None } else { Some(c.sliding_window) };
+            let a = crate::attend::attend(&q, k, v, pos, 1.0, window, diff)?;
             x = (r + layer.post_attention_norm.forward(&layer.o.forward(&a)?, diff)?)?;
             let r = x.clone();
             let y = layer.pre_ffn_norm.forward(&x, diff)?;
@@ -435,18 +436,4 @@ impl Gemma4 {
         *kv = Kv::from_layers(slots);
         self.norm.forward(&x, diff)
     }
-}
-
-/// Causal mask, and for a sliding-window layer keys no older than `window` positions.
-fn mask(att: &Tensor, n: usize, pos: usize, window: Option<usize>) -> Result<Tensor> {
-    let total = att.dim(D::Minus1)?;
-    let hidden: Vec<u8> = (0..n)
-        .flat_map(|i| (0..total).map(move |j| u8::from(j > pos + i || window.is_some_and(|w| pos + i - j.min(pos + i) >= w))))
-        .collect();
-    if !hidden.contains(&1) {
-        return Ok(att.clone());
-    }
-    let m = Tensor::from_slice(&hidden, (n, total), att.device())?.broadcast_as(att.shape())?;
-    let neg = Tensor::new(f32::NEG_INFINITY, att.device())?.broadcast_as(att.shape())?;
-    m.where_cond(&neg, att)
 }

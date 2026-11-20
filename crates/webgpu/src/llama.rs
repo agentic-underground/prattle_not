@@ -1,4 +1,5 @@
-//! A Llama-family decoder (SmolLM2) on the GPU, its KV cache resident there. The arithmetic is
+//! A Llama-family decoder (SmolLM2, and Qwen3 with its per-head q/k norms) on the GPU, its KV cache
+//! resident there. The arithmetic is
 //! prattle-core's `llama` module's, step for step, so the two can be compared token for token.
 
 use crate::{Gpu, GpuTensor};
@@ -9,6 +10,9 @@ struct Layer {
     k: GpuTensor,
     v: GpuTensor,
     o: GpuTensor,
+    /// Qwen3's per-head RMS norms on queries and keys, before RoPE; absent in SmolLM2.
+    q_norm: Option<GpuTensor>,
+    k_norm: Option<GpuTensor>,
     ln2: GpuTensor,
     gate: GpuTensor,
     up: GpuTensor,
@@ -33,20 +37,33 @@ pub struct Llama {
     pub pos: usize,
 }
 
-/// A tensor's values as f32, whatever its stored precision.
-fn floats(view: &safetensors::tensor::TensorView) -> Result<Vec<f32>, String> {
-    let b = view.data();
-    Ok(match view.dtype() {
-        safetensors::Dtype::F32 => b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect(),
-        safetensors::Dtype::BF16 => b.chunks_exact(2).map(|c| half::bf16::from_le_bytes([c[0], c[1]]).to_f32()).collect(),
-        safetensors::Dtype::F16 => b.chunks_exact(2).map(|c| half::f16::from_le_bytes([c[0], c[1]]).to_f32()).collect(),
-        other => return Err(format!("weights in {other:?} are not read")),
-    })
+/// Every tensor of a Llama checkpoint, kept at f32 on the GPU, so this engine and candle read the
+/// same numbers: SmolLM2's.
+pub fn rule(_name: &str, _shape: &[usize]) -> Option<crate::stream::Store> {
+    Some(crate::stream::Store::Full)
+}
+
+/// Matrices at f16, everything else at f32: Qwen3's, whose 1.7B at f32 would leave the pair over the
+/// browser proof's 12 GiB.
+pub fn rule_half(_name: &str, shape: &[usize]) -> Option<crate::stream::Store> {
+    Some(if shape.len() >= 2 { crate::stream::Store::Half } else { crate::stream::Store::Full })
+}
+
+/// Whether a config.json is Qwen3's: Llama-shaped, with q/k norms, its matrices held at f16.
+pub fn is_qwen3(config: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(config).is_ok_and(|v| v["model_type"] == "qwen3")
 }
 
 impl Llama {
     /// From a model's config.json and its safetensors bytes, with `max_ctx` positions of KV cache.
     pub fn load(gpu: &Gpu, config: &[u8], weights: &[u8], max_ctx: usize) -> Result<Llama, String> {
+        let mut w = crate::Weights::default();
+        crate::upload_file(gpu, weights, rule, &mut w)?;
+        Self::from_weights(gpu, config, w, max_ctx)
+    }
+
+    /// From a model's config.json and its weights, already streamed to the GPU by `rule`.
+    pub fn from_weights(gpu: &Gpu, config: &[u8], mut w: crate::Weights, max_ctx: usize) -> Result<Llama, String> {
         let c: serde_json::Value = serde_json::from_slice(config).map_err(|e| format!("config.json: {e}"))?;
         let u = |k: &str| c[k].as_u64().map(|v| v as usize).ok_or_else(|| format!("config.json has no {k}"));
         let (h, heads, kvh, layers_n) = (u("hidden_size")?, u("num_attention_heads")?, u("num_key_value_heads")?, u("num_hidden_layers")?);
@@ -56,14 +73,10 @@ impl Llama {
         if !c["rope_scaling"].is_null() {
             return Err("rope_scaling is not read yet: only plain RoPE (SmolLM2)".into());
         }
-        let st = safetensors::SafeTensors::deserialize(weights).map_err(|e| format!("safetensors: {e}"))?;
-        let get = |name: &str| -> Result<GpuTensor, String> {
-            let view = st.tensor(name).map_err(|_| format!("the weights have no {name}"))?;
-            Ok(gpu.upload(&floats(&view)?, view.shape()))
-        };
-        let embed = get("model.embed_tokens.weight")?;
-        let tied = c["tie_word_embeddings"].as_bool().unwrap_or(false) || st.tensor("lm_head.weight").is_err();
-        let head = if tied { get("model.embed_tokens.weight")? } else { get("lm_head.weight")? };
+        let embed = w.take("model.embed_tokens.weight")?;
+        let tied = c["tie_word_embeddings"].as_bool().unwrap_or(false) || !w.has("lm_head.weight");
+        let head = if tied { embed.clone() } else { w.take("lm_head.weight")? };
+        let mut get = |name: &str| w.take(name);
         let mut layers = Vec::with_capacity(layers_n);
         for l in 0..layers_n {
             let p = |s: &str| format!("model.layers.{l}.{s}.weight");
@@ -73,6 +86,8 @@ impl Llama {
                 k: get(&p("self_attn.k_proj"))?,
                 v: get(&p("self_attn.v_proj"))?,
                 o: get(&p("self_attn.o_proj"))?,
+                q_norm: get(&p("self_attn.q_norm")).ok(),
+                k_norm: get(&p("self_attn.k_norm")).ok(),
                 ln2: get(&p("post_attention_layernorm"))?,
                 gate: get(&p("mlp.gate_proj"))?,
                 up: get(&p("mlp.up_proj"))?,
@@ -99,7 +114,7 @@ impl Llama {
             max_ctx,
             embed,
             head,
-            norm: get("model.norm.weight")?,
+            norm: w.take("model.norm.weight")?,
             cos: gpu.upload(&cos, &[max_ctx, hd / 2]),
             sin: gpu.upload(&sin, &[max_ctx, hd / 2]),
             layers,
@@ -156,7 +171,11 @@ impl Llama {
                 c.push(gpu.copy(&x));
             }
             let a = gpu.rms_norm(&x, &l.ln1, self.eps);
-            let (q, k, v) = (gpu.matmul(&a, &l.q), gpu.matmul(&a, &l.k), gpu.matmul(&a, &l.v));
+            let (mut q, mut k, v) = (gpu.matmul(&a, &l.q), gpu.matmul(&a, &l.k), gpu.matmul(&a, &l.v));
+            if let (Some(qn), Some(kn)) = (&l.q_norm, &l.k_norm) {
+                q = gpu.rms_norm(&q.view(&[n * self.heads, self.hd]), qn, self.eps).view(&[n, self.heads * self.hd]);
+                k = gpu.rms_norm(&k.view(&[n * self.kvh, self.hd]), kn, self.eps).view(&[n, width]);
+            }
             gpu.rope(&q, self.heads, &self.cos, &self.sin, self.pos);
             gpu.rope(&k, self.kvh, &self.cos, &self.sin, self.pos);
             gpu.copy_into(&k, &l.kc, self.pos * width);

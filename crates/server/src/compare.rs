@@ -120,15 +120,15 @@ fn load(file: &Path, models: &Path) -> Result<Loaded, String> {
     let card = |n: &str| cards.iter().find(|(m, _)| m == n).map(|(_, d)| d.clone()).expect("every card is made above");
 
     let started = Instant::now();
-    let bytes = std::fs::read(file).map_err(|e| format!("{}: {e}", file.display()))?;
+    // dropped from the page cache as it lands, so the whole file is never held twice in host memory
+    let bytes = prattle_core::weights::read_file(&file.to_string_lossy())?;
     // a THIN file fetches its models from the hub here, each file checked against the manifest's sha256
-    let parts = prattle_core::fast_llm::FastLlm::unpack(&bytes)?;
+    let fast_bytes = bytes.len() as u64;
+    let parts = prattle_core::fast_llm::FastLlm::unpack(bytes)?;
+    let manifest: Value = serde_json::from_str(parts.get("fast_llm")?).map_err(|e| e.to_string())?;
     let parts = if parts.refs.is_empty() { parts } else { parts.resolve(&prattle_core::fast_llm::hub_fetch)? };
     let fast = Model::from_fast_llm_parts(parts, card(fast_s), card(fast_t), sd, td, quant)?;
     let fast_ms = started.elapsed().as_secs_f64() * 1000.0;
-    let fast_bytes = bytes.len() as u64;
-    let manifest: Value = serde_json::from_str(prattle_core::fast_llm::FastLlm::unpack(&bytes)?.get("fast_llm")?).map_err(|e| e.to_string())?;
-    drop(bytes);
 
     let name = |k: &str| manifest[k]["name"].as_str().map(str::to_string).ok_or(format!("the manifest names no {k}"));
     let (src, tgt) = (models.join(name("source")?), models.join(name("target")?));

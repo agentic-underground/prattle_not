@@ -128,6 +128,15 @@ impl Decoder {
     }
 
     /// Per layer, whether its state is recurrent (C, R) — copied across a matched pair, never mapped.
+    /// Each layer's device, where one model's layers span several cards (`Llama::load_across`); None
+    /// where every layer sits on one.
+    pub fn layer_devices(&self) -> Option<Vec<candle_core::Device>> {
+        match self {
+            Decoder::Llama(d) => Some(d.layer_devices().to_vec()),
+            _ => None,
+        }
+    }
+
     pub fn recurrent_layers(&self) -> Vec<bool> {
         match self {
             Decoder::Qwen35(d) => d.config().attention.iter().map(|a| !a).collect(),
@@ -176,6 +185,10 @@ impl Decoder {
     }
     pub fn forward_capture(&self, ids: &Tensor, pos: usize, kv: &mut Kv, capture: Option<&mut Vec<Tensor>>) -> Result<Tensor> {
         each!(self, d => d.forward_capture(ids, pos, kv, capture))
+    }
+    /// Logits from residual rows `[.., hidden]` — the arithmetic `forward_capture` ends with.
+    pub fn unembed(&self, x: &Tensor) -> Result<Tensor> {
+        each!(self, d => d.unembed(x))
     }
 }
 

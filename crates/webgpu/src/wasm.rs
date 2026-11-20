@@ -32,6 +32,43 @@ impl Session {
         })
     }
 
+    /// A session whose reading model's weights then arrive in pieces — `feed`, `next_file` between
+    /// the files of a sharded checkpoint, `finish_source` at the end — so a file larger than this
+    /// module's 4 GiB of memory still loads: a promise.
+    pub fn open(config: Vec<u8>, tokenizer: Vec<u8>) -> js_sys::Promise {
+        std::panic::set_hook(Box::new(|info| {
+            let _ = js_sys::Reflect::set(&js_sys::global(), &"prattlePanic".into(), &info.to_string().into());
+        }));
+        wasm_bindgen_futures::future_to_promise(async move {
+            let m = GpuModel::open(&config, &tokenizer).await.map_err(js)?;
+            Ok(Session(Rc::new(RefCell::new(m))).into())
+        })
+    }
+
+    /// The next piece of the file arriving, in order.
+    pub fn feed(&self, bytes: &[u8]) -> Result<(), JsError> {
+        self.0.borrow_mut().feed(bytes).map_err(|e| JsError::new(&e))
+    }
+
+    /// The model arriving goes on to its next file.
+    pub fn next_file(&self) -> Result<(), JsError> {
+        self.0.borrow_mut().next_file().map_err(|e| JsError::new(&e))
+    }
+
+    pub fn finish_source(&self) -> Result<(), JsError> {
+        self.0.borrow_mut().finish_source().map_err(|e| JsError::new(&e))
+    }
+
+    /// Begin the answering model; its weights arrive through `feed`, then `finish_target`.
+    pub fn begin_target(&self, config: Vec<u8>) -> Result<(), JsError> {
+        self.0.borrow_mut().begin_target(&config).map_err(|e| JsError::new(&e))
+    }
+
+    pub fn finish_target(&self, bridge: Vec<u8>) -> Result<(), JsError> {
+        let bridge = (!bridge.is_empty()).then_some(bridge.as_slice());
+        self.0.borrow_mut().finish_target(bridge).map_err(|e| JsError::new(&e))
+    }
+
     pub fn attach_target_bytes(&self, config: Vec<u8>, weights: Vec<u8>, bridge: Vec<u8>) -> Result<(), JsError> {
         let bridge = (!bridge.is_empty()).then_some(bridge.as_slice());
         self.0.borrow_mut().attach_target(&config, &weights, bridge).map_err(|e| JsError::new(&e))

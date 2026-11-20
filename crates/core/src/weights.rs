@@ -3,6 +3,50 @@
 
 use std::collections::BTreeMap;
 
+/// What a loader takes: a safetensors buffer of its own, or a model read in place from a larger one
+/// (`crate::half::Shared::part`). A `Vec<u8>` converts, so a caller holding one passes it as it is.
+pub enum Weights {
+    Bytes(Vec<u8>),
+    Shared(crate::half::Shared),
+}
+
+impl Weights {
+    /// The weights as a `Shared`; a buffer of its own is moved in, not copied.
+    pub fn shared(self) -> Result<crate::half::Shared, String> {
+        match self {
+            Weights::Bytes(b) => crate::half::Shared::new(b).map_err(|e| e.to_string()),
+            Weights::Shared(s) => Ok(s),
+        }
+    }
+
+    /// A VarBuilder over the weights, at `dtype` on `device`.
+    pub fn builder(self, dtype: candle_core::DType, device: &candle_core::Device) -> Result<candle_nn::VarBuilder<'static>, String> {
+        Ok(self.shared()?.builder(dtype, device))
+    }
+
+    /// No tensors at all — a THIN FAST_LLM's part before `resolve`.
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Weights::Bytes(b) if b.is_empty())
+    }
+
+    /// Whether these are read in place from the same buffer as `other`.
+    pub fn shares_buffer(&self, other: &Weights) -> bool {
+        matches!((self, other), (Weights::Shared(a), Weights::Shared(b)) if a.shares_buffer(b))
+    }
+}
+
+impl From<Vec<u8>> for Weights {
+    fn from(b: Vec<u8>) -> Self {
+        Weights::Bytes(b)
+    }
+}
+
+impl From<crate::half::Shared> for Weights {
+    fn from(s: crate::half::Shared) -> Self {
+        Weights::Shared(s)
+    }
+}
+
 /// Merge safetensors buffers into one. A tensor named in two buffers refuses.
 pub fn merge(buffers: &[Vec<u8>]) -> Result<Vec<u8>, String> {
     let mut header: BTreeMap<String, serde_json::Value> = BTreeMap::new();

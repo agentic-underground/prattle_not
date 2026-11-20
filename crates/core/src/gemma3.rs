@@ -9,7 +9,7 @@
 //! (or as `layer_types` lists) with `rope_theta` and linear RoPE scaling; scores scaled by
 //! `query_pre_attn_scalar^-½`; the output head tied to the embeddings.
 
-use candle_core::{D, DType, Device, Result, Tensor};
+use candle_core::{DType, Device, Result, Tensor};
 use candle_nn::{Embedding, Linear, Module, VarBuilder, embedding, linear_no_bias as linear};
 
 use crate::llama::{Geometry, Kv};
@@ -161,9 +161,15 @@ const MAX_POSITIONS: usize = 8192;
 impl Gemma3 {
     /// From `config.json` and ONE safetensors buffer — a text-only checkpoint (`model.*`) or a
     /// multimodal one (`language_model.model.*`, the vision tower ignored).
-    pub fn load(config_json: &[u8], weights: Vec<u8>, device: &Device) -> std::result::Result<Gemma3, String> {
+    pub fn load(config_json: &[u8], weights: impl Into<crate::weights::Weights>, device: &Device) -> std::result::Result<Gemma3, String> {
+        Self::from_builder(config_json, weights.into().builder(DType::F32, device)?)
+    }
+
+    /// As `load`, from a VarBuilder already made.
+    pub fn from_builder(config_json: &[u8], vb: VarBuilder) -> std::result::Result<Gemma3, String> {
         let cfg = Config::from_json(config_json)?;
-        let vb = VarBuilder::from_buffered_safetensors(weights, DType::F32, device).map_err(|e| e.to_string())?;
+        let device = vb.device().clone();
+        let device = &device;
         let prefix = if vb.contains_tensor("language_model.model.embed_tokens.weight") { "language_model.model" } else { "model" };
         Self::build(cfg, vb.pp(prefix), device).map_err(|e| e.to_string())
     }
@@ -244,6 +250,12 @@ impl Gemma3 {
 
     /// As `forward`, also pushing each layer's INPUT residual stream `[batch, n, hidden]` into
     /// `capture` — the features a bridge maps from.
+    /// Logits from residual rows `[.., hidden]`: the final norm, the head, and the family's own scaling —
+    /// what `forward_capture` does to the last layer's output (a logit lens reads any layer's).
+    pub fn unembed(&self, x: &Tensor) -> Result<Tensor> {
+        self.head.forward(&self.norm.forward(x, self.differentiable)?)?.to_dtype(DType::F32)
+    }
+
     pub fn forward_capture(&self, ids: &Tensor, pos: usize, kv: &mut Kv, capture: Option<&mut Vec<Tensor>>) -> Result<Tensor> {
         let x = self.run(ids, pos, kv, capture)?;
         let n = x.dim(1)?;
@@ -272,13 +284,8 @@ impl Gemma3 {
                 v = Tensor::cat(&[pv, &v], 2)?.contiguous()?;
             }
             *slot = Some((k.clone(), v.clone()));
-            let group = c.heads / c.kv_heads;
-            let k = candle_transformers::utils::repeat_kv(k, group)?;
-            let v = candle_transformers::utils::repeat_kv(v, group)?;
-            let att = (q.matmul(&k.t()?)? * c.query_pre_attn_scalar.powf(-0.5))?;
-            let att = mask(&att, n, pos, if layer.global { None } else { Some(c.sliding_window) })?;
-            let p = if diff { candle_nn::ops::softmax(&att, D::Minus1)? } else { candle_nn::ops::softmax_last_dim(&att)? };
-            let a = p.matmul(&v.contiguous()?)?.transpose(1, 2)?.reshape((b, n, c.heads * c.head_dim))?;
+            let window = if layer.global { None } else { Some(c.sliding_window) };
+            let a = crate::attend::attend(&q, k, v, pos, c.query_pre_attn_scalar.powf(-0.5), window, diff)?;
             x = (r + layer.post_attention_norm.forward(&layer.o.forward(&a)?, diff)?)?;
             let r = x.clone();
             let y = layer.pre_ffn_norm.forward(&x, diff)?;
@@ -288,19 +295,4 @@ impl Gemma3 {
         *kv = Kv::from_layers(slots);
         self.norm.forward(&x, diff)
     }
-}
-
-/// Causal mask, and for a sliding-window layer keys no older than `window` positions: query row i (at
-/// absolute position pos+i) sees key j when j ≤ pos+i and pos+i − j < window.
-fn mask(att: &Tensor, n: usize, pos: usize, window: Option<usize>) -> Result<Tensor> {
-    let total = att.dim(D::Minus1)?;
-    let hidden: Vec<u8> = (0..n)
-        .flat_map(|i| (0..total).map(move |j| u8::from(j > pos + i || window.is_some_and(|w| pos + i - j.min(pos + i) >= w))))
-        .collect();
-    if !hidden.contains(&1) {
-        return Ok(att.clone());
-    }
-    let m = Tensor::from_slice(&hidden, (n, total), att.device())?.broadcast_as(att.shape())?;
-    let neg = Tensor::new(f32::NEG_INFINITY, att.device())?.broadcast_as(att.shape())?;
-    m.where_cond(&neg, att)
 }

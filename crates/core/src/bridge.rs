@@ -210,6 +210,13 @@ pub fn translate_hidden<D: crate::decoder::LayerKeys>(map: &KvMap, hidden: &[Ten
 /// As `translate_hidden`, with the prompt's token ids `[1, n]` on the target's device — what a map's
 /// extension may read.
 pub fn translate_hidden_with<D: crate::decoder::LayerKeys>(map: &KvMap, hidden: &[Tensor], ids: Option<&Tensor>, target: &D) -> Result<Kv> {
+    translate_hidden_at(map, hidden, ids, target, 0)
+}
+
+/// As `translate_hidden_with`, for tokens whose first sits at absolute position `pos` — a turn appended
+/// to a conversation the target already holds. Each token's rows depend only on its own features and
+/// position, so a tail translated at its position is the tail of the whole prompt translated at 0.
+pub fn translate_hidden_at<D: crate::decoder::LayerKeys>(map: &KvMap, hidden: &[Tensor], ids: Option<&Tensor>, target: &D, pos: usize) -> Result<Kv> {
     let prepared = match &map.extension {
         Some(e) => e.prepare(ids, target)?,
         None => None,
@@ -224,6 +231,9 @@ pub fn translate_hidden_with<D: crate::decoder::LayerKeys>(map: &KvMap, hidden: 
         .map(|(l, &s)| {
             if map.k[l].elem_count() == 0 {
                 return Ok(None); // recurrent: the caller fills it from the source's own state
+            }
+            if pos > 0 && map.writes_conv(l) {
+                return Err(candle_core::Error::Msg(format!("layer {l}: a short-conv or scan state is built from the whole prompt, and cannot be translated from position {pos} on")));
             }
             let n = hidden[s].dim(1)?;
             let f = tapped_features(hidden, s, map.taps)?;
@@ -251,7 +261,7 @@ pub fn translate_hidden_with<D: crate::decoder::LayerKeys>(map: &KvMap, hidden: 
             if let Some((rk, rv)) = map.extension.as_ref().map(|r| r.rows(l, &f)).transpose()?.flatten() {
                 (yk, yv) = ((yk + rk)?, (yv + rv)?);
             }
-            let k = target.rotate_layer_keys(l, &to_heads(yk, n, l)?, 0, false)?;
+            let k = target.rotate_layer_keys(l, &to_heads(yk, n, l)?, pos, false)?;
             let v = to_heads(yv, n, l)?;
             match (map.ck.get(l), map.cv.get(l)) {
                 // contiguous: at one token RoPE hands back strided keys, which CUDA's matmul refuses (a
@@ -320,6 +330,32 @@ mod tests {
         let (sum, n) = kv.layers()[0].as_ref().unwrap();
         assert_eq!(sum.to_vec2::<f32>().unwrap(), vec![vec![12., 9.]], "every token's input row reaches the target");
         assert_eq!(n.to_scalar::<f32>().unwrap(), 3.0);
+    }
+
+    /// A tail translated at its own position is the tail of the whole prompt translated from 0 — what
+    /// appending a turn to a conversation relies on.
+    #[test]
+    fn a_tail_translated_at_its_position_is_the_tail_of_the_whole() {
+        /// Adds each key row's absolute position, so a key at the wrong position shows.
+        struct Positioned;
+        impl crate::decoder::LayerKeys for Positioned {
+            fn rotate_layer_keys(&self, _layer: usize, k: &Tensor, pos: usize, _inverse: bool) -> Result<Tensor> {
+                let n = k.dim(2)?;
+                let at = Tensor::arange(pos as f32, (pos + n) as f32, k.device())?.reshape((1, 1, n, 1))?;
+                k.broadcast_add(&at)
+            }
+        }
+        let cpu = Device::Cpu;
+        let w = Tensor::new(&[[1f32, 0.], [0.5, 2.]], &cpu).unwrap(); // features [x, 1] → [x + 0.5, 2]
+        let map = KvMap { layer_of: vec![0], taps: 1, k: vec![w.clone()], v: vec![w], src_heads: 1, tgt_heads: 1, dim: 2, ck: vec![], cv: vec![], conv_rows: 0, rows_are_inputs: false, shapes: vec![(1, 2)], extension: None };
+        let h = Tensor::new(&[[[1f32], [2.], [3.], [4.], [5.]]], &cpu).unwrap();
+        let whole = translate_hidden(&map, std::slice::from_ref(&h), &Positioned).unwrap();
+        let tail = translate_hidden_at(&map, &[h.narrow(1, 3, 2).unwrap()], None, &Positioned, 3).unwrap();
+        let (wk, wv) = whole.layers()[0].as_ref().unwrap();
+        let (tk, tv) = tail.layers()[0].as_ref().unwrap();
+        let rows = |t: &Tensor| t.flatten_all().unwrap().to_vec1::<f32>().unwrap();
+        assert_eq!(rows(tk), rows(&wk.narrow(2, 3, 2).unwrap()), "a key translated at its position differs from the whole's");
+        assert_eq!(rows(tv), rows(&wv.narrow(2, 3, 2).unwrap()));
     }
 
     #[test]
@@ -405,10 +441,10 @@ mod tests {
             b
         };
         assert!(KvMap::from_bytes(&bytes(&t)).is_ok(), "a plain map did not load");
-        t.insert("mk1.0".into(), w);
+        t.insert("extra.0".into(), w);
         let err = KvMap::from_bytes(&bytes(&t)).err().map(|e| e.to_string()).unwrap_or_default();
-        assert!(err.contains("mk1.0"), "an unread tensor was not refused by name: {err:?}");
-        t.remove("mk1.0");
+        assert!(err.contains("extra.0"), "an unread tensor was not refused by name: {err:?}");
+        t.remove("extra.0");
         t.insert("meta".into(), Tensor::new(&[1u32, 1, 1, 1, 0, 0, 1][..], &cpu).unwrap());
         let err = KvMap::from_bytes(&bytes(&t)).err().map(|e| e.to_string()).unwrap_or_default();
         assert!(err.contains("meta[6]"), "a flag the runtime does not read was not refused: {err:?}");

@@ -25,10 +25,63 @@ pub fn pair() -> Result<(Device, Device), String> {
     let names: Vec<&str> = spec.split(',').collect();
     let source = named(names[0])?;
     let target = match names.get(1) {
-        Some(n) => named(n)?,
+        Some(n) => named(n.split('+').next().unwrap_or(n))?,
         None => source.clone(),
     };
     Ok((source, target))
+}
+
+/// The target's devices: its name in `PRATTLE_DEVICES` split on `+`. `cuda:0,cuda:0+cuda:1` puts the
+/// source on cuda:0 and the target's layers across both cards (`spread`); one name is one card. The
+/// first is `pair`'s target, where the target's input and the bridge live.
+pub fn target_devices() -> Result<Vec<Device>, String> {
+    let spec = std::env::var("PRATTLE_DEVICES").unwrap_or_else(|_| "cpu".into());
+    let names: Vec<&str> = spec.split(',').collect();
+    let first = pair()?.1;
+    match names.get(1) {
+        Some(n) if n.contains('+') => {
+            let rest = n.split('+').skip(1).map(named).collect::<Result<Vec<_>, _>>()?;
+            Ok(std::iter::once(first).chain(rest).collect())
+        }
+        _ => Ok(vec![first]),
+    }
+}
+
+/// How many host threads a tool's own worker pool may run: `RAYON_NUM_THREADS` when set — the same cap
+/// candle's kernels obey, so a shared machine can hold every CPU job to it — else every core, at most 16.
+pub fn cpu_workers() -> usize {
+    let cores = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
+    std::env::var("RAYON_NUM_THREADS").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n > 0).map_or(cores, |n| n.min(cores))
+}
+
+/// Which of `devices` devices each of `layers` layers sits on, by index: contiguous runs, as even as the
+/// count allows, the earlier devices taking one more where it does not divide.
+pub fn spread(layers: usize, devices: usize) -> Vec<usize> {
+    let devices = devices.max(1);
+    let (each, extra) = (layers / devices, layers % devices);
+    (0..devices).flat_map(|d| std::iter::repeat_n(d, each + usize::from(d < extra))).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::spread;
+
+    #[test]
+    fn layers_spread_across_devices_in_even_contiguous_runs() {
+        assert_eq!(spread(64, 2), [vec![0; 32], vec![1; 32]].concat(), "a 64-layer model halves across two cards");
+        assert_eq!(spread(5, 2), vec![0, 0, 0, 1, 1], "the first card takes the remainder");
+        assert_eq!(spread(3, 1), vec![0, 0, 0], "one card holds every layer");
+        assert_eq!(spread(80, 3).iter().filter(|&&d| d == 2).count(), 26, "three cards: 27, 27, 26");
+    }
+
+    /// A tool's own pool obeys RAYON_NUM_THREADS, the cap a shared machine sets every CPU job.
+    #[test]
+    fn a_tools_worker_pool_obeys_rayon_num_threads() {
+        // SAFETY: nextest runs each test in its own process, so no other thread reads the environment
+        unsafe { std::env::set_var("RAYON_NUM_THREADS", "3") };
+        let cores = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
+        assert_eq!(super::cpu_workers(), cores.min(3), "the pool ignored RAYON_NUM_THREADS");
+    }
 }
 
 /// The precision the TARGET's weights are held in, from `PRATTLE_TARGET_DTYPE` — `bf16` or `f16` where

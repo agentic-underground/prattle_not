@@ -7,17 +7,34 @@ use prattle_core::text::{Template, delta};
 use prattle_core::{Arm, Step};
 use tokenizers::Tokenizer;
 
-use crate::Gpu;
 use crate::bridge::Bridge;
-use crate::llama::Llama;
+use crate::decoder::{self, Decoder};
+use crate::stream::Stream;
+use crate::{Gpu, Upload, Weights};
 
 /// Positions of KV cache per model: a 2K-token prompt and a full reply.
 const MAX_CTX: usize = 2560;
 
+/// A model whose weights are arriving: its config, the file being read, and what has landed so far.
+struct Loading {
+    config: Vec<u8>,
+    rule: crate::Rule,
+    stream: Stream,
+    weights: Weights,
+}
+
+impl Loading {
+    fn new(config: &[u8]) -> Loading {
+        Loading { config: config.to_vec(), rule: decoder::rule(config), stream: Stream::new(), weights: Weights::default() }
+    }
+}
+
 pub struct GpuModel {
     gpu: Gpu,
-    source: Llama,
-    target: Option<Llama>,
+    /// Absent only while the reading model's weights are still arriving.
+    source: Option<Decoder>,
+    target: Option<Decoder>,
+    loading: Option<Loading>,
     bridge: Option<Bridge>,
     tokenizer: Tokenizer,
     template: Template,
@@ -56,15 +73,24 @@ fn argmax(logits: &[f32]) -> u32 {
 impl GpuModel {
     /// The reading model, from its config.json, tokenizer.json and safetensors bytes, on the best GPU.
     pub async fn from_bytes(config: &[u8], tokenizer: &[u8], weights: &[u8]) -> Result<GpuModel, String> {
+        let mut m = Self::open(config, tokenizer).await?;
+        m.feed(weights)?;
+        m.finish_source()?;
+        Ok(m)
+    }
+
+    /// Open the best GPU and begin the reading model, whose weights then arrive through `feed` — one
+    /// file after another, each begun with `next_file` — and are done at `finish_source`.
+    pub async fn open(config: &[u8], tokenizer: &[u8]) -> Result<GpuModel, String> {
         let gpu = Gpu::new().await?;
-        let source = Llama::load(&gpu, config, weights, MAX_CTX)?;
         let tokenizer = Tokenizer::from_bytes(tokenizer).map_err(err)?;
         let stop = ["<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<end_of_turn>", "<|end_of_text|>"].iter().filter_map(|t| tokenizer.token_to_id(t)).collect();
         Ok(GpuModel {
             template: Template::from_config(config)?,
             gpu,
-            source,
+            source: None,
             target: None,
+            loading: Some(Loading::new(config)),
             bridge: None,
             tokenizer,
             stop,
@@ -77,14 +103,63 @@ impl GpuModel {
         })
     }
 
-    /// Attach the model that answers when bridged, through a fitted bridge. One token crosses with the
-    /// paper's correction; this engine runs corrected bridges only.
-    pub fn attach_target(&mut self, config: &[u8], weights: &[u8], bridge: Option<&[u8]>) -> Result<(), String> {
+    /// The next file of the model whose weights are arriving: a sharded checkpoint is several.
+    pub fn next_file(&mut self) -> Result<(), String> {
+        let l = self.loading.as_mut().ok_or("no model is loading")?;
+        l.stream.finish()?;
+        l.stream = Stream::new();
+        Ok(())
+    }
+
+    /// The next piece of the current file, in order.
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let l = self.loading.as_mut().ok_or("no model is loading")?;
+        l.stream.feed(bytes, &mut Upload { gpu: &self.gpu, weights: &mut l.weights, rule: l.rule })
+    }
+
+    fn finish_loading(&mut self) -> Result<Decoder, String> {
+        let l = self.loading.take().ok_or("no model is loading")?;
+        l.stream.finish()?;
+        Decoder::build(&self.gpu, &l.config, l.weights, MAX_CTX)
+    }
+
+    /// Every file of the reading model has arrived.
+    pub fn finish_source(&mut self) -> Result<(), String> {
+        self.source = Some(self.finish_loading()?);
+        Ok(())
+    }
+
+    /// Begin the model that answers when bridged; its weights arrive through `feed`.
+    pub fn begin_target(&mut self, config: &[u8]) -> Result<(), String> {
+        if self.source.is_none() {
+            return Err("the reading model has not finished loading".into());
+        }
+        self.loading = Some(Loading::new(config));
+        Ok(())
+    }
+
+    /// Every file of the answering model has arrived: attach it through a fitted bridge. One token
+    /// crosses with the paper's correction; this engine runs corrected bridges only.
+    pub fn finish_target(&mut self, bridge: Option<&[u8]>) -> Result<(), String> {
         let bridge = bridge.ok_or("the WebGPU engine bridges through a fitted bridge file only")?;
-        self.target = Some(Llama::load(&self.gpu, config, weights, MAX_CTX)?);
-        self.bridge = Some(Bridge::load(&self.gpu, bridge)?);
+        let target = self.finish_loading()?;
+        let bridge = Bridge::load(&self.gpu, bridge)?;
+        bridge.fits(&target)?;
+        self.target = Some(target);
+        self.bridge = Some(bridge);
         self.bridge_tokens = 1;
         Ok(())
+    }
+
+    /// Attach the model that answers when bridged, from its whole weights file.
+    pub fn attach_target(&mut self, config: &[u8], weights: &[u8], bridge: Option<&[u8]>) -> Result<(), String> {
+        self.begin_target(config)?;
+        self.feed(weights)?;
+        self.finish_target(bridge)
+    }
+
+    fn source(&mut self) -> Result<&mut Decoder, String> {
+        self.source.as_mut().ok_or_else(|| "the reading model has not finished loading".to_string())
     }
 
     pub fn has_target(&self) -> bool {
@@ -134,8 +209,9 @@ impl GpuModel {
                 Some(d[..d.len() - self.bridge_tokens.min(d.len() - 1)].to_vec())
             }
         };
+        self.source()?;
         let Some(history) = memory else {
-            self.source.reset();
+            self.source.as_mut().unwrap().reset(&self.gpu);
             self.pending = ids;
             self.bridged = false;
             self.counters = Counters { prompt_tokens: n, reader_tokens: 0, generator_history: n, bridge_tokens: 0 };
@@ -151,14 +227,15 @@ impl GpuModel {
             return Err("this arm needs a target attached — turn the bridge on".into());
         }
         if answers_target && !reads_target {
-            let (target, bridge) = (self.target.as_mut().unwrap(), self.bridge.as_ref().unwrap());
-            self.source.reset();
-            let hidden = self.source.prefill_capture(&self.gpu, &history);
+            let (target, bridge, source) = (self.target.as_mut().unwrap(), self.bridge.as_ref().unwrap(), self.source.as_mut().unwrap());
+            source.reset(&self.gpu);
+            let hidden = source.prefill_capture(&self.gpu, &history);
             let kvs = bridge.translate(&self.gpu, &hidden, target);
-            target.install(&self.gpu, &kvs, history.len());
+            target.reset(&self.gpu);
+            target.install(&self.gpu, &kvs, history.len(), source)?;
         } else {
-            let reader = if reads_target { self.target.as_mut().unwrap() } else { &mut self.source };
-            reader.reset();
+            let reader = if reads_target { self.target.as_mut().unwrap() } else { self.source.as_mut().unwrap() };
+            reader.reset(&self.gpu);
             reader.prefill(&self.gpu, &history);
         }
         let tail = if matches!(arm, Arm::Bridge | Arm::WrongDonor(_)) { self.bridge_tokens.min(n - 1) } else { 1 };
@@ -180,7 +257,7 @@ impl GpuModel {
         }
         let model = match (&mut self.target, self.bridged) {
             (Some(t), true) => t,
-            _ => &mut self.source,
+            _ => self.source.as_mut().ok_or("the reading model has not finished loading")?,
         };
         let mut logits = model.forward(&self.gpu, &self.pending).await;
         penalize(&mut logits, &self.generated[self.generated.len().saturating_sub(REPEAT_WINDOW)..]);

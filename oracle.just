@@ -12,6 +12,12 @@ cuda_home := env_var("HOME") / ".cache/prattle/cuda-" + cuda_version
 
 # Where the host tools run: the source's device, then the target's (crates/core/src/device.rs). The two GPUs by default; PRATTLE_DEVICES=cpu for the CPU.
 devices := env_var_or_default("PRATTLE_DEVICES", "cuda:0,cuda:1")
+# GPU-1 sheds its heat and GPU-0 does not (docs/LANES/POWER_ENVELOPE.md): SUSTAINED work goes on GPU-1 and
+# bursts on GPU-0. An evaluation's sustained load is its target, already second. A fit's is its source and the
+# f64 sums beside it (83 % of GPU-0 against 21 % of GPU-1 in a logged fit), so a fit runs with the pair swapped.
+fit_devices := env_var_or_default("PRATTLE_FIT_DEVICES", if devices == "cuda:0,cuda:1" { "cuda:1,cuda:0" } else { devices })
+# The upstream oracle's "<target>,<source>": its 27B target is the sustained load, on GPU-1.
+oracle_gpus := "1,0"
 
 # Every tool run holds this lock, so two runs QUEUE for the GPUs instead of one dying out of memory —
 # and a timing never shares the cards. A run started by hand takes it too: flock /tmp/prattle-gpu.lock <cmd>.
@@ -161,7 +167,7 @@ oracle-home:
 # Upstream's own TTFT demo — native 27B against the composite 4B→bridge→27B — run unchanged except
 # for the native options in scripts/oracle_ttft.py. GPUS="<target>,<source>" places the models
 # (scripts/patch_oracle_two_gpu.py); GPUS="" is upstream's single-GPU layout. Writes target/oracle/.
-oracle-ttft CONTEXT="16384" ROUNDS="3" GPUS="0,1":
+oracle-ttft CONTEXT="16384" ROUNDS="3" GPUS=oracle_gpus:
     #!/usr/bin/env sh
     set -e
     o="{{ oracle_dir }}"; out="{{ justfile_directory() }}/target/oracle/ttft-{{ CONTEXT }}-$(date +%s)"
@@ -176,7 +182,7 @@ oracle-ttft CONTEXT="16384" ROUNDS="3" GPUS="0,1":
 
 # E120's protocol through the two-GPU oracle — 8 prompts × 3 paired repetitions at each length —
 # and E120's statistic from prattle_core::measure, beside upstream's table. Writes target/oracle/.
-reproduce LENGTHS="128,2048,8192,16384" PROMPTS="8" REPS="3" GPUS="0,1":
+reproduce LENGTHS="128,2048,8192,16384" PROMPTS="8" REPS="3" GPUS=oracle_gpus:
     #!/usr/bin/env sh
     set -e
     o="{{ oracle_dir }}"; root="{{ justfile_directory() }}"
@@ -192,7 +198,7 @@ reproduce LENGTHS="128,2048,8192,16384" PROMPTS="8" REPS="3" GPUS="0,1":
 
 # The fidelity panel beside the speed-up (docs/BRIDGE.md §1.7, adapted): the native 27B's own reply,
 # scored teacher-forced under native, composite, 4B, empty and wrong-donor conditions.
-fidelity LENGTHS="128,2048,8192,16384" PROMPTS="8" GPUS="0,1":
+fidelity LENGTHS="128,2048,8192,16384" PROMPTS="8" GPUS=oracle_gpus:
     #!/usr/bin/env sh
     set -e
     o="{{ oracle_dir }}"; root="{{ justfile_directory() }}"
@@ -214,7 +220,7 @@ oracle-state:
     cd "$o/latentport"
     text="Incident sample 1: catalog: cached price version 41 served after database advanced to version 42; invalidation event missing. Incident sample 2: checkout: hot key expired; 500 requests simultaneously queried the database."
     for pair in source:4b target:27b; do
-        LATENTPORT_NATIVE_LIB="$o/build/bin/libllama.so" LATENTPORT_HOME="{{ oracle_home }}" LD_LIBRARY_PATH="{{ cuda_home }}/lib64" PRATTLE_ORACLE_GPUS="0,1" \
+        LATENTPORT_NATIVE_LIB="$o/build/bin/libllama.so" LATENTPORT_HOME="{{ oracle_home }}" LD_LIBRARY_PATH="{{ cuda_home }}/lib64" PRATTLE_ORACLE_GPUS="{{ oracle_gpus }}" \
             "$o/venv/bin/python" -I "$root/scripts/oracle_dump_state.py" "${pair%%:*}" "$root/target/oracle/state-${pair#*:}" "$text" 2>&1 | tail -1
     done
 
@@ -225,7 +231,7 @@ oracle-translator:
     set -e
     o="{{ oracle_dir }}"; root="{{ justfile_directory() }}"; mkdir -p "$root/target/oracle"
     cd "$o/latentport"
-    LATENTPORT_NATIVE_LIB="$o/build/bin/libllama.so" LATENTPORT_HOME="{{ oracle_home }}" LD_LIBRARY_PATH="{{ cuda_home }}/lib64" PRATTLE_ORACLE_GPUS="0,1" \
+    LATENTPORT_NATIVE_LIB="$o/build/bin/libllama.so" LATENTPORT_HOME="{{ oracle_home }}" LD_LIBRARY_PATH="{{ cuda_home }}/lib64" PRATTLE_ORACLE_GPUS="{{ oracle_gpus }}" \
         "$o/venv/bin/python" -I "$root/scripts/oracle_dump_translator.py" "$root/target/oracle/translator" \
         "Incident sample 1: catalog: cached price version 41 served after database advanced to version 42; invalidation event missing. Incident sample 2: checkout: hot key expired; 500 requests simultaneously queried the database." \
         2>&1 | tail -1
@@ -244,7 +250,7 @@ chat *ARGS:
     PRATTLE_ORACLE="$(just oracle-command)" cargo run -q -p server --release -- {{ ARGS }}
 
 # The command prattle-server runs as its oracle worker (scripts/oracle_worker.py).
-oracle-command GPUS="0,1":
+oracle-command GPUS=oracle_gpus:
     #!/usr/bin/env sh
     o="{{ oracle_dir }}"; log="{{ justfile_directory() }}/target/oracle/chat-native.log"
     mkdir -p "$(dirname "$log")"
@@ -265,13 +271,13 @@ models:
     done
 
 # Download the PUBLISHED 135M → 360M bridge into models/bridges/ instead of fitting it: the file the
-# page loads, at the hub commit the page pins (BRIDGE_HUB in crates/web/www/index.html is the one
-# definition). No token. A bridge already there is kept, and the command says whether it matches.
+# page loads, at the hub commit the page pins (the pair's bridgeHub in crates/web/www/index.html is the
+# one definition). No token. A bridge already there is kept, and the command says whether it matches.
 bridge-fetch:
     #!/usr/bin/env sh
     set -e
-    url=$(sed -n "s/^const BRIDGE_HUB = '\(.*\)';$/\1/p" crates/web/www/index.html)
-    [ -n "$url" ] || { echo "⛔ no BRIDGE_HUB in crates/web/www/index.html"; exit 1; }
+    url=$(sed -n "s/.*bridge: 'smollm2-135m-to-360m', bridgeHub: '\([^']*\)'.*/\1/p" crates/web/www/index.html | head -1)
+    [ -n "$url" ] || { echo "⛔ no bridgeHub for smollm2-135m-to-360m in crates/web/www/index.html"; exit 1; }
     out=models/bridges/smollm2-135m-to-360m.safetensors
     mkdir -p models/bridges
     tmp=$(mktemp -p models/bridges)
@@ -292,7 +298,22 @@ bridge-fetch:
 # A bridge's measured speed-up to first token on this host (crates/core/src/bin/speedup.rs): the
 # browser Measure's arms and token clock, E120's design (8 prompts x 3) and statistic, every run's
 # counters checked. Run on a quiet machine — a timing beside a fit is a timing of contention.
-speedup SRC TGT BRIDGE TOKENS="256" PROMPTS="8" REPS="3":
+# GPU is ONE index and is required: both models go on that card alone, and the other card is not even
+# visible to the run. Its power swings in step on two cards are a reset trigger on this box, so "all
+# visible" is never a default. The per-prompt timings and the card's clocks and power limit are logged
+# to runs/speedup/; the summary line is printed.
+speedup GPU SRC TGT BRIDGE TOKENS="256" PROMPTS="8" REPS="3":
     #!/usr/bin/env sh
     set -e
-    PRATTLE_DEVICES="{{ devices }}" LD_LIBRARY_PATH="{{ cuda_home }}/lib64" flock "{{ gpu_lock }}" "$(just _tool speedup)" "{{ SRC }}" "{{ TGT }}" "{{ BRIDGE }}" {{ TOKENS }} {{ PROMPTS }} {{ REPS }} 2>/dev/null
+    case "{{ GPU }}" in
+        ''|*[!0-9]*) echo "⛔ GPU is one card index (0, 1, …), not '{{ GPU }}' — speedup runs on one card only"; exit 1 ;;
+    esac
+    tool=$(PRATTLE_DEVICES=cuda:0 just _tool speedup)
+    mkdir -p runs/speedup
+    log="runs/speedup/$(basename "{{ BRIDGE }}" .safetensors)-gpu{{ GPU }}-{{ TOKENS }}-$(date -u +%Y%m%dT%H%M%SZ).log"
+    echo "# just speedup {{ GPU }} {{ SRC }} {{ TGT }} {{ BRIDGE }} {{ TOKENS }} {{ PROMPTS }} {{ REPS }}" > "$log"
+    nvidia-smi -i "{{ GPU }}" --query-gpu=name,power.limit,clocks.max.sm,clocks_event_reasons.active --format=csv >> "$log" 2>&1 || true
+    nvidia-smi -i "{{ GPU }}" -q -d CLOCK 2>/dev/null | grep -i -A2 'locked' >> "$log" || true
+    CUDA_VISIBLE_DEVICES="{{ GPU }}" PRATTLE_DEVICES=cuda:0 LD_LIBRARY_PATH="{{ cuda_home }}/lib64" flock "{{ gpu_lock }}" "$tool" "{{ SRC }}" "{{ TGT }}" "{{ BRIDGE }}" {{ TOKENS }} {{ PROMPTS }} {{ REPS }} >>"$log" 2>&1 || { echo "⛔ speedup failed — $log" >&2; tail -5 "$log" >&2; exit 1; }
+    grep '^speed-up' "$log"
+    echo "log: $log" >&2

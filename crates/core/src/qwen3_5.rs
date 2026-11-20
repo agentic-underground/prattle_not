@@ -154,14 +154,20 @@ const MAX_POSITIONS: usize = 8192;
 impl Qwen35 {
     /// From `config.json` and ONE safetensors buffer — `model.language_model.*` (the vision tower and
     /// the multi-token-prediction layer ignored) or `model.*`.
-    pub fn load(config_json: &[u8], weights: Vec<u8>, device: &Device) -> std::result::Result<Qwen35, String> {
+    pub fn load(config_json: &[u8], weights: impl Into<crate::weights::Weights>, device: &Device) -> std::result::Result<Qwen35, String> {
         Self::load_in(config_json, weights, device, DType::F32)
     }
 
     /// As `load`, its weights held in `dtype` (`crate::half`).
-    pub fn load_in(config_json: &[u8], weights: Vec<u8>, device: &Device, dtype: DType) -> std::result::Result<Qwen35, String> {
+    pub fn load_in(config_json: &[u8], weights: impl Into<crate::weights::Weights>, device: &Device, dtype: DType) -> std::result::Result<Qwen35, String> {
+        Self::from_builder(config_json, weights.into().builder(dtype, device)?)
+    }
+
+    /// As `load_in`, from a VarBuilder already made — `model::load_decoder_q` builds under
+    /// `crate::half::quantize_with` with one.
+    pub fn from_builder(config_json: &[u8], vb: VarBuilder) -> std::result::Result<Qwen35, String> {
         let cfg = Config::from_json(config_json)?;
-        let vb = VarBuilder::from_buffered_safetensors(weights, dtype, device).map_err(|e| e.to_string())?;
+        let device = vb.device().clone();
         let prefix = if vb.contains_tensor("model.language_model.embed_tokens.weight") { "model.language_model" } else { "model" };
         // An untied output head (the 9B) is its own `lm_head`; otherwise it is the embeddings.
         let head = if vb.contains_tensor("lm_head.weight") {
@@ -169,7 +175,7 @@ impl Qwen35 {
         } else {
             None
         };
-        Self::build(cfg, vb.pp(prefix), head, device).map_err(|e| e.to_string())
+        Self::build(cfg, vb.pp(prefix), head, &device).map_err(|e| e.to_string())
     }
 
     fn build(cfg: Config, vb: VarBuilder, head: Option<Lin>, device: &Device) -> Result<Qwen35> {
@@ -283,6 +289,12 @@ impl Qwen35 {
         self.head.forward(&x)?.to_dtype(DType::F32)
     }
 
+    /// Logits from residual rows `[.., hidden]`: the final norm, the head, and the family's own scaling —
+    /// what `forward_capture` does to the last layer's output (a logit lens reads any layer's).
+    pub fn unembed(&self, x: &Tensor) -> Result<Tensor> {
+        self.head.forward(&self.norm.forward_diff(x, self.differentiable)?)?.to_dtype(DType::F32)
+    }
+
     pub fn forward_capture(&self, ids: &Tensor, pos: usize, kv: &mut Kv, capture: Option<&mut Vec<Tensor>>) -> Result<Tensor> {
         let x = self.run(ids, pos, kv, capture)?;
         let n = x.dim(1)?;
@@ -329,15 +341,7 @@ impl Qwen35 {
             v = Tensor::cat(&[pv, &v], 2)?.contiguous()?;
         }
         *slot = Some((k.clone(), v.clone()));
-        let group = c.heads / c.kv_heads;
-        let k = candle_transformers::utils::repeat_kv(k, group)?;
-        let v = candle_transformers::utils::repeat_kv(v, group)?;
-        // contiguous: at one token RoPE hands back a strided query, which CUDA's matmul refuses
-        let att = (q.contiguous()?.matmul(&k.t()?)? / (hd as f64).sqrt())?;
-        let att = if n == 1 { att } else { causal(&att, n, pos)? };
-        let p = if diff { candle_nn::ops::softmax(&att, D::Minus1)? } else { candle_nn::ops::softmax_last_dim(&att)? };
-        crate::observe::attention(&p)?;
-        let o = p.matmul(&v.contiguous()?)?.transpose(1, 2)?.reshape((b, n, c.heads * hd))?;
+        let o = crate::attend::attend(&q, k, v, pos, 1.0 / (hd as f64).sqrt(), None, diff)?;
         a.o.forward(&(o * candle_nn::ops::sigmoid(&gate)?)?)
     }
 
@@ -474,14 +478,6 @@ fn delta_chunks(q: &Tensor, k: &Tensor, v: &Tensor, log_decay: &Tensor, beta: &T
 /// log(1 + eˣ) as max(x, 0) + log(1 + e^−|x|): no exp overflows, so a large input gives a finite decay.
 fn softplus(x: &Tensor) -> Result<Tensor> {
     x.relu()? + (x.abs()?.neg()?.exp()? + 1.0)?.log()?
-}
-
-fn causal(att: &Tensor, n: usize, pos: usize) -> Result<Tensor> {
-    let total = pos + n;
-    let mask: Vec<u8> = (0..n).flat_map(|i| (0..total).map(move |j| u8::from(j > pos + i))).collect();
-    let mask = Tensor::from_slice(&mask, (n, total), att.device())?.broadcast_as(att.shape())?;
-    let neg = Tensor::new(f32::NEG_INFINITY, att.device())?.broadcast_as(att.shape())?;
-    mask.where_cond(&neg, att)
 }
 
 #[cfg(test)]

@@ -69,6 +69,47 @@ impl Template {
         }
     }
 
+    /// Everything the prompt holds before the user's own words: the template's head and, with `system`,
+    /// the system turn.
+    pub fn head(&self, system: Option<&str>) -> String {
+        // split at a marker, so the head is the template's own and never a second copy of it
+        const USER: &str = "\u{1}USER\u{1}";
+        let whole = match system {
+            Some(system) => self.prompt_with_system(system, USER),
+            None => self.prompt(USER),
+        };
+        whole.split(USER).next().unwrap_or_default().to_string()
+    }
+
+    /// What closes an assistant turn: the family's end-of-turn token — generation stops on it without
+    /// reading it — and whatever its template writes after it.
+    pub fn end_reply(&self) -> &'static str {
+        match self {
+            Template::SmolLM2 | Template::Qwen3 | Template::Lfm2 => "<|im_end|>\n",
+            Template::Gemma3 => "<end_of_turn>\n",
+            Template::Gemma4 => "<turn|>\n",
+            Template::Granite => "<|end_of_text|>\n",
+            Template::Llama3 => "<|eot_id|>",
+        }
+    }
+
+    /// A user turn as it follows an earlier exchange, ending where the assistant speaks: `prompt`
+    /// without its head (no `<bos>`, no system turn).
+    pub fn user_turn(&self, user: &str) -> String {
+        let opens = match self {
+            Template::SmolLM2 | Template::Qwen3 | Template::Lfm2 => "<|im_start|>user",
+            Template::Gemma3 => "<start_of_turn>user",
+            Template::Gemma4 => "<|turn>user",
+            Template::Granite => "<|start_of_role|>user",
+            Template::Llama3 => "<|start_header_id|>user",
+        };
+        let whole = self.prompt(user);
+        // the head ends in this turn's opener; anything before it opens the conversation once
+        let head = self.head(None);
+        let at = whole[..head.len()].rfind(opens).unwrap_or(head.len());
+        whole[at..].to_string()
+    }
+
     pub fn prompt(&self, user: &str) -> String {
         match self {
             Template::SmolLM2 => chat_prompt(user),
@@ -101,6 +142,50 @@ mod tests {
         let p = chat_prompt("What is 2+2?");
         assert!(p.contains("<|im_start|>user\nWhat is 2+2?<|im_end|>"));
         assert!(p.ends_with("<|im_start|>assistant\n"));
+    }
+
+    const FAMILIES: [Template; 7] = [Template::SmolLM2, Template::Qwen3, Template::Llama3, Template::Gemma3, Template::Gemma4, Template::Granite, Template::Lfm2];
+
+    /// The head is the prompt up to the user's first word, with and without a system turn, in every family.
+    #[test]
+    fn the_head_is_the_prompt_up_to_the_users_words() {
+        for t in FAMILIES {
+            let (with, without) = (t.prompt_with_system("Answer in French.", "Hi there"), t.prompt("Hi there"));
+            let (hw, ho) = (t.head(Some("Answer in French.")), t.head(None));
+            assert_eq!(with.strip_prefix(&hw).map(|r| r.starts_with("Hi there")), Some(true), "{t:?}: {hw:?} is not the head of {with:?}");
+            assert_eq!(without.strip_prefix(&ho).map(|r| r.starts_with("Hi there")), Some(true), "{t:?}: {ho:?} is not the head of {without:?}");
+            assert!(hw.contains("in French"), "{t:?}: the head lost the system turn");
+        }
+    }
+
+    /// A second exchange is written as the family's own template writes a conversation: the reply closed
+    /// by its end-of-turn token, the next user turn with no second head.
+    #[test]
+    fn a_second_turn_follows_the_first_as_the_familys_template_writes_it() {
+        let two = |t: Template, system: Option<&str>| {
+            let first = match system {
+                Some(s) => t.prompt_with_system(s, "Hi"),
+                None => t.prompt("Hi"),
+            };
+            format!("{first}Hello!{}{}", t.end_reply(), t.user_turn("Bye"))
+        };
+        assert_eq!(
+            two(Template::Qwen3, None),
+            "<|im_start|>user\nHi<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\nHello!<|im_end|>\n<|im_start|>user\nBye<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        );
+        assert_eq!(
+            two(Template::Gemma3, Some("Be brief.")),
+            "<bos><start_of_turn>user\nBe brief.\n\nHi<end_of_turn>\n<start_of_turn>model\nHello!<end_of_turn>\n<start_of_turn>user\nBye<end_of_turn>\n<start_of_turn>model\n"
+        );
+        assert_eq!(
+            two(Template::Llama3, None),
+            "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nHi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\nHello!<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nBye<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+        );
+        assert_eq!(
+            two(Template::Granite, None).matches("<|start_of_role|>system").count(),
+            1,
+            "Granite's default system turn opens the conversation once"
+        );
     }
 
     #[test]

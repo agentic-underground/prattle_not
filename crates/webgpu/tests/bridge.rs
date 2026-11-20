@@ -4,7 +4,7 @@
 //! itself. Its logits, then its greedy reply, must agree.
 
 use candle_core::{Device, Tensor};
-use prattle_webgpu::{Gpu, bridge::Bridge, llama::Llama};
+use prattle_webgpu::{Gpu, bridge::Bridge, decoder::Decoder, llama::Llama};
 
 const MODELS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../models/");
 
@@ -38,12 +38,12 @@ fn smollm2_handoff_on_the_gpu_equals_candle() {
 
     // the GPU engine
     let gpu = pollster::block_on(Gpu::new()).expect("a GPU adapter");
-    let mut src = Llama::load(&gpu, &sc, &sw, 256).unwrap();
-    let mut tgt = Llama::load(&gpu, &tc, &tw, 256).unwrap();
+    let mut src = Decoder::Llama(Llama::load(&gpu, &sc, &sw, 256).unwrap());
+    let mut tgt = Decoder::Llama(Llama::load(&gpu, &tc, &tw, 256).unwrap());
     let bridge = Bridge::load(&gpu, &map_bytes).unwrap();
     let hidden = src.prefill_capture(&gpu, &PROMPT[..n - 1]);
     let kvs = bridge.translate(&gpu, &hidden, &tgt);
-    tgt.install(&gpu, &kvs, n - 1);
+    tgt.install(&gpu, &kvs, n - 1, &src).unwrap();
     let got = pollster::block_on(tgt.forward(&gpu, &PROMPT[n - 1..]));
 
     let scale = want.iter().fold(0f32, |m, v| m.max(v.abs()));
